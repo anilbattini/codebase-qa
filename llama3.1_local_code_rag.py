@@ -3,9 +3,10 @@ import os
 import json
 import hashlib
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma  # ✅ Updated import
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain.docstore.document import Document
+import pathspec  # ✅ For .gitignore parsing
 
 # Page setup
 st.set_page_config(page_title="Codebase Chat", layout="wide")
@@ -21,16 +22,12 @@ with st.sidebar:
 # Constants
 VECTOR_DB_DIR = "vector_db"
 METADATA_FILE = os.path.join(VECTOR_DB_DIR, "processed_files.json")
+EXTENSIONS = (".kt", ".kts", ".gradle", ".gitignore", ".properties")  # ✅ Update here if needed
 
 # Session state initialization
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-if "retriever" not in st.session_state:
-    st.session_state.retriever = None
-
-if "thinking_logs" not in st.session_state:
-    st.session_state.thinking_logs = []
+for key in ["chat_history", "retriever", "thinking_logs"]:
+    if key not in st.session_state:
+        st.session_state[key] = [] if key == "thinking_logs" else None if key == "retriever" else []
 
 # Metadata helpers
 def load_metadata():
@@ -51,22 +48,38 @@ def get_file_hash(path):
     except:
         return None
 
-def get_files_to_process(directory, extensions=(".kt", ".kts", ".java", ".ts", ".py", ".js")):
+def load_gitignore_patterns(directory):
+    gitignore_path = os.path.join(directory, ".gitignore")
+    if not os.path.exists(gitignore_path):
+        return None
+    with open(gitignore_path, "r") as f:
+        return pathspec.PathSpec.from_lines("gitwildmatch", f.readlines())
+
+def get_files_to_process(directory, extensions=EXTENSIONS):
     metadata = load_metadata()
     new_metadata = {}
     files_to_process = []
 
+    spec = load_gitignore_patterns(directory)
+
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(extensions):
-                path = os.path.join(root, file)
-                file_hash = get_file_hash(path)
-                if not file_hash:
-                    continue
+            if not file.endswith(extensions):
+                continue
 
-                if metadata.get(path) != file_hash:
-                    files_to_process.append(path)
-                new_metadata[path] = file_hash
+            path = os.path.join(root, file)
+            rel_path = os.path.relpath(path, directory)
+
+            if spec and spec.match_file(rel_path):
+                continue
+
+            file_hash = get_file_hash(path)
+            if not file_hash:
+                continue
+
+            if metadata.get(path) != file_hash:
+                files_to_process.append(path)
+            new_metadata[path] = file_hash
 
     save_metadata(new_metadata)
     return files_to_process
@@ -96,7 +109,7 @@ def build_rag(project_dir):
     splits = text_splitter.split_documents(documents)
 
     vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory=VECTOR_DB_DIR)
-    vectorstore.persist()
+    # vectorstore.persist()
 
     st.success("✅ Vector DB updated and saved locally.")
     return vectorstore.as_retriever()
@@ -120,7 +133,7 @@ def ollama_llm(question, context, log_placeholder):
     st.session_state.thinking_logs.append("🧠 Sending prompt to LLM...")
     update_logs(log_placeholder)
 
-    st.session_state.thinking_logs.append(f"📨 Prompt:\n{prompt[:1000]}...")  # Truncated
+    st.session_state.thinking_logs.append(f"📨 Prompt:\n{prompt[:1000]}...")
     update_logs(log_placeholder)
 
     response = ollama.invoke([('human', prompt)])
