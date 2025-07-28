@@ -7,6 +7,7 @@ from langchain_chroma import Chroma  # ✅ Updated import
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain.docstore.document import Document
 import pathspec  # ✅ For .gitignore parsing
+from chunker_factory import get_chunker
 
 # Page setup
 st.set_page_config(page_title="Codebase Chat", layout="wide")
@@ -22,12 +23,19 @@ with st.sidebar:
 # Constants
 VECTOR_DB_DIR = "vector_db"
 METADATA_FILE = os.path.join(VECTOR_DB_DIR, "processed_files.json")
-EXTENSIONS = (".kt", ".kts", ".gradle", ".gitignore", ".properties")  # ✅ Update here if needed
+EXTENSIONS = (".kt", ".kts", ".gradle", ".gitignore", ".properties", ".xml")  # ✅ Update here if needed
 
 # Session state initialization
 for key in ["chat_history", "retriever", "thinking_logs"]:
     if key not in st.session_state:
         st.session_state[key] = [] if key == "thinking_logs" else None if key == "retriever" else []
+
+# Function to reset metadata if extensions changed
+def reset_metadata_if_extensions_changed(new_extensions):
+    metadata = load_metadata()
+    known_extensions = {os.path.splitext(path)[1] for path in metadata}
+    if not set(new_extensions).issubset(known_extensions):
+        save_metadata({})
 
 # Metadata helpers
 def load_metadata():
@@ -84,9 +92,27 @@ def get_files_to_process(directory, extensions=EXTENSIONS):
     save_metadata(new_metadata)
     return files_to_process
 
-# Build RAG pipeline
+def summarize_chunk(chunk, path):
+    prompt = f"Summarize the following code chunk from {path} in one line:\n\n{chunk}"
+    try:
+        response = ollama.invoke([('human', prompt)])
+        return response.content.strip()
+    except Exception as e:
+        st.warning(f"Failed to summarize chunk: {e}")
+        return "No summary available"
+
+def summarize_chunk(chunk, path):
+    prompt = f"Summarize the following code chunk from {path} in one line:\n\n{chunk}"
+    try:
+        response = ollama.invoke([('human', prompt)])
+        return response.content.strip()
+    except Exception as e:
+        st.warning(f"Failed to summarize chunk: {e}")
+        return "No summary available"
+
 def build_rag(project_dir):
-    files_to_process = get_files_to_process(project_dir)
+    reset_metadata_if_extensions_changed(EXTENSIONS)
+    files_to_process = get_files_to_process(project_dir, extensions=EXTENSIONS)
     embeddings = OllamaEmbeddings(model=ollama_model, base_url=ollama_endpoint)
 
     if not files_to_process:
@@ -98,20 +124,29 @@ def build_rag(project_dir):
 
     documents = []
     for path in files_to_process:
+        ext = os.path.splitext(path)[1]
+        chunker = get_chunker(ext)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
-                documents.append(Document(page_content=content, metadata={"source": path}))
+                chunks = chunker(content)
+                for i, chunk in enumerate(chunks):
+                    summary = summarize_chunk(chunk, path)
+                    documents.append(
+                        Document(
+                            page_content=chunk,
+                            metadata={
+                                "source": path,
+                                "chunk_index": i,
+                                "summary": summary
+                            }
+                        )
+                    )
         except Exception as e:
-            st.warning(f"Failed to load {path}: {e}")
+            st.warning(f"Failed to process {path}: {e}")
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    splits = text_splitter.split_documents(documents)
-
-    vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory=VECTOR_DB_DIR)
-    # vectorstore.persist()
-
-    st.success("✅ Vector DB updated and saved locally.")
+    vectorstore = Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory=VECTOR_DB_DIR)
+    st.success("✅ Vector DB updated with summaries and saved locally.")
     return vectorstore.as_retriever()
 
 # LLM setup
@@ -142,14 +177,12 @@ def ollama_llm(question, context, log_placeholder):
 
     return response.content.strip()
 
-# Combine retrieved docs
 def combine_docs(docs, log_placeholder):
     sources = [doc.metadata.get("source", "unknown") for doc in docs]
     st.session_state.thinking_logs.append(f"📚 Retrieved {len(docs)} documents from:\n" + "\n".join(sources))
     update_logs(log_placeholder)
     return "\n\n".join(doc.page_content for doc in docs)
 
-# RAG chain
 def rag_chain(question, log_placeholder):
     st.session_state.thinking_logs.clear()
     st.session_state.thinking_logs.append("🔍 Retrieving relevant context...")
@@ -163,7 +196,7 @@ def rag_chain(question, log_placeholder):
 
     return ollama_llm(question, context, log_placeholder)
 
-# Load retriever
+# Load retriever if needed
 if st.session_state.retriever is None and os.path.exists(project_dir):
     st.session_state.retriever = build_rag(project_dir)
     if st.session_state.retriever:
@@ -174,7 +207,6 @@ main_container = st.container()
 chat_container = main_container.container()
 log_container = main_container.container()
 
-# CSS for vertical split
 st.markdown("""
 <style>
     .main-container > div:nth-child(1) { height: 75vh; overflow-y: auto; }
@@ -182,10 +214,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Apply custom class to main container
 st.markdown("<div class='main-container'>", unsafe_allow_html=True)
 
-# Chat history
 with chat_container:
     st.subheader("🧠 Chat History")
     for msg in st.session_state.chat_history:
@@ -195,7 +225,6 @@ with chat_container:
     st.subheader("💬 Ask a Question")
     user_input = st.chat_input("Type your question here...")
 
-# Thinking logs
 with log_container:
     st.subheader("🪵 Thinking Mode Logs")
     log_placeholder = st.empty()
@@ -206,5 +235,4 @@ with log_container:
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         st.rerun()
 
-# Close custom container
 st.markdown("</div>", unsafe_allow_html=True)
