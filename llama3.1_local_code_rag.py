@@ -1,4 +1,5 @@
 # Imports (same as before)
+from rich import _console
 import streamlit as st
 import os, json, hashlib, time
 from langchain_chroma import Chroma
@@ -32,7 +33,6 @@ for key in ["chat_history", "retriever"]:
 ollama = ChatOllama(model=ollama_model, base_url=ollama_endpoint)
 
 # Logs initializer
-user_input = st.chat_input("Type your question here...")
 if "thinking_logs" not in st.session_state:
     st.session_state.thinking_logs = []
 
@@ -50,10 +50,35 @@ def load_metadata():
             return json.load(f)
     return {}
 
-def save_metadata(metadata):
+def save_metadata(new_metadata):
     os.makedirs(VECTOR_DB_DIR, exist_ok=True)
+    existing_metadata = load_metadata()
+    existing_metadata = {
+        k: v for k, v in existing_metadata.items()
+        if os.path.exists(os.path.join(project_dir, k))
+    }
+    merged_metadata = {**existing_metadata, **new_metadata}
     with open(METADATA_FILE, "w") as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(merged_metadata, f, indent=2)
+
+def prune_stale_metadata(project_dir):
+    metadata = load_metadata()
+    pruned_metadata = {}
+    removed_files = []
+
+    for rel_path, file_hash in metadata.items():
+        absolute_path = os.path.join(project_dir, rel_path)
+        if os.path.exists(absolute_path):
+            pruned_metadata[rel_path] = file_hash
+        else:
+            removed_files.append(rel_path)
+
+    if removed_files:
+        st.session_state.thinking_logs.append(f"🗑 Pruned {len(removed_files)} missing files from metadata:")
+        st.session_state.thinking_logs.extend([f"   - {path}" for path in removed_files])
+        update_logs(st.empty())
+
+    save_metadata(pruned_metadata)
 
 def get_file_hash(path):
     try:
@@ -69,46 +94,51 @@ def load_gitignore_patterns(directory):
     with open(gitignore_path, "r") as f:
         return pathspec.PathSpec.from_lines("gitwildmatch", f.readlines())
 
-def reset_metadata_if_extensions_changed(new_extensions):
-    metadata = load_metadata()
-    known_extensions = {os.path.splitext(p)[1] for p in metadata.keys()}
-    if not set(new_extensions).issubset(known_extensions):
-        save_metadata({})
-
 def get_files_to_process(directory, extensions=EXTENSIONS):
     metadata = load_metadata()
     new_metadata = {}
     files_to_process = []
 
-    skipped_gitignore, skipped_cached = 0, 0
+    skipped_gitignore, skipped_cached, scanned, filtered = 0, 0, 0, 0
     spec = load_gitignore_patterns(directory)
+
+    st.session_state.thinking_logs.append(f"📂 Scanning directory: {directory}")
+    update_logs(st.empty())
 
     for root, _, files in os.walk(directory):
         for file in files:
-            if not file.endswith(extensions):
-                continue
-
+            scanned += 1
             path = os.path.join(root, file)
             rel_path = os.path.relpath(path, directory)
+            ext = os.path.splitext(path)[1]
+
+            if not ext in extensions:
+                filtered += 1
+                # st.session_state.thinking_logs.append(f"⛔️ Skipped (extension mismatch): {rel_path}")
+                continue
 
             if spec and spec.match_file(rel_path):
                 skipped_gitignore += 1
+                # st.session_state.thinking_logs.append(f"🧾 Skipped via .gitignore: {rel_path}")
                 continue
 
             file_hash = get_file_hash(path)
             if not file_hash:
+                # st.session_state.thinking_logs.append(f"⚠️ Skipped (unreadable): {rel_path}")
                 continue
 
             stored_hash = metadata.get(rel_path)
             if stored_hash == file_hash:
                 skipped_cached += 1
+                # st.session_state.thinking_logs.append(f"🔁 Skipped (unchanged): {rel_path}")
                 continue
 
+            st.session_state.thinking_logs.append(f"🆕 To process: {rel_path}")
             files_to_process.append(path)
             new_metadata[rel_path] = file_hash
 
     save_metadata(new_metadata)
-    st.session_state.thinking_logs.append(f"⏭️ Skipped: {skipped_gitignore} via .gitignore, {skipped_cached} unchanged")
+    update_logs(st.empty())
     return files_to_process
 
 def summarize_chunk(chunk, path):
@@ -119,9 +149,11 @@ def summarize_chunk(chunk, path):
     except Exception as e:
         st.warning(f"Failed to summarize chunk: {e}")
         return "No summary available"
+    
+def chunk_fingerprint(chunk: str) -> str:
+    return hashlib.sha256(chunk.encode("utf-8")).hexdigest()
 
 def build_rag(project_dir, log_placeholder):
-    reset_metadata_if_extensions_changed(EXTENSIONS)
     files_to_process = get_files_to_process(project_dir, EXTENSIONS)
     embeddings = OllamaEmbeddings(model=ollama_model, base_url=ollama_endpoint)
 
@@ -135,6 +167,7 @@ def build_rag(project_dir, log_placeholder):
     update_logs(log_placeholder)
 
     total_chunks, documents = 0, []
+    seen_fingerprints = set()
 
     for path in files_to_process:
         ext = os.path.splitext(path)[1]
@@ -149,14 +182,24 @@ def build_rag(project_dir, log_placeholder):
                 content = f.read()
                 chunks = chunker(content)
                 chunk_count = len(chunks)
-                total_chunks += chunk_count
 
                 for i, chunk in enumerate(chunks):
+                    fingerprint = chunk_fingerprint(chunk)
+                    if fingerprint in seen_fingerprints:
+                        continue  # Skip duplicate chunk
+                    seen_fingerprints.add(fingerprint)
+
                     summary = summarize_chunk(chunk, path)
                     documents.append(Document(
                         page_content=chunk,
-                        metadata={"source": path, "chunk_index": i, "summary": summary}
+                        metadata={
+                            "source": path,
+                            "chunk_index": i,
+                            "summary": summary,
+                            "fingerprint": fingerprint
+                        }
                     ))
+                    total_chunks += 1
 
                 duration = time.time() - t0
                 st.session_state.thinking_logs.append(f"✅ {path}: {chunk_count} chunks in {duration:.2f}s")
@@ -170,7 +213,9 @@ def build_rag(project_dir, log_placeholder):
     db_duration = time.time() - start_time
     vectorstore = Chroma.from_documents(documents, embedding=embeddings, persist_directory=VECTOR_DB_DIR)
     st.success("✅ Vector DB updated")
-    st.session_state.thinking_logs.append(f"📦 Indexed {total_chunks} chunks from {len(files_to_process)} files in {db_duration:.2f}s")
+    st.session_state.thinking_logs.append(
+        f"📦 Indexed {total_chunks} unique chunks from {len(files_to_process)} files in {db_duration:.2f}s"
+    )
     update_logs(log_placeholder)
 
     return vectorstore.as_retriever()
@@ -201,6 +246,13 @@ def rag_chain(question, log_placeholder):
     update_logs(log_placeholder)
 
     docs = st.session_state.retriever.invoke(question)
+    if not docs:
+        _console.log(f"\nDocs retrieved: {len(docs)}")
+        for doc in docs:
+            if not doc:
+                _console.log(f"\nDoc retrieved: {doc.metadata.get('source', 'unknown')}")
+                _console.log(f"\nDoc retrieved: {doc}")
+                    
     context = combine_docs(docs, log_placeholder)
 
     st.session_state.thinking_logs.append("🧠 Generating response...")
@@ -208,12 +260,19 @@ def rag_chain(question, log_placeholder):
 
     return ollama_llm(question, context, log_placeholder)
 
-# Load retriever
-if st.session_state.retriever is None and os.path.exists(project_dir):
+
+if "rag_built" not in st.session_state:
+    st.session_state.rag_built = False
+if "rag_building" not in st.session_state:
+    st.session_state.rag_building = False
+
+if not st.session_state.rag_built and not st.session_state.rag_building and os.path.exists(project_dir):
+    st.session_state.rag_building = True  # Prevent reentry during build
     log_placeholder = st.empty()
     st.session_state.retriever = build_rag(project_dir, log_placeholder)
     if st.session_state.retriever:
-        st.sidebar.success("Codebase loaded!")
+        st.session_state.rag_built = True
+    st.session_state.rag_building = False  # Mark completion
 
 # Layout containers
 main_container = st.container()
@@ -229,6 +288,11 @@ st.markdown("""
 
 st.markdown("<div class='main-container'>", unsafe_allow_html=True)
 
+if st.session_state.rag_building:
+    st.warning("⏳ Initializing the vector DB... Please wait.")
+else:
+    user_input = st.chat_input("Type your question here...")
+
 with chat_container:
     st.subheader("🧠 Chat History")
     for msg in st.session_state.chat_history:
@@ -236,7 +300,7 @@ with chat_container:
             st.markdown(msg["content"])
 
     st.subheader("💬 Ask a Question")
-    user_input = st.chat_input("Type your question here...")
+    # user_input = st.chat_input("Type your question here...")
 
 with log_container:
     st.subheader("🪵 Thinking Mode Logs")
@@ -246,6 +310,6 @@ with log_container:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         response = rag_chain(user_input, log_placeholder)
         st.session_state.chat_history.append({"role": "assistant", "content": response})
-        st.rerun()
+        # st.rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
