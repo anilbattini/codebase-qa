@@ -110,7 +110,72 @@ def summarize_chunk(chunk, path):
         st.warning(f"Failed to summarize chunk: {e}")
         return "No summary available"
 
+import time
+
 def build_rag(project_dir):
+    reset_metadata_if_extensions_changed(EXTENSIONS)
+    files_to_process = get_files_to_process(project_dir, extensions=EXTENSIONS)
+    embeddings = OllamaEmbeddings(model=ollama_model, base_url=ollama_endpoint)
+
+    if not files_to_process:
+        st.info("✅ All files already processed. Loading existing vector DB...")
+        vectorstore = Chroma(persist_directory=VECTOR_DB_DIR, embedding_function=embeddings)
+        return vectorstore.as_retriever()
+
+    start_time = time.time()
+    st.info(f"📂 Processing {len(files_to_process)} new/updated files...")
+    st.session_state.thinking_logs.append(f"🔍 Starting RAG processing for {len(files_to_process)} files...")
+    update_logs(log_placeholder)
+
+    total_chunks = 0
+    documents = []
+
+    for path in files_to_process:
+        ext = os.path.splitext(path)[1]
+        chunker = get_chunker(ext)
+
+        file_start_time = time.time()
+        st.session_state.thinking_logs.append(f"📄 Processing file: {path}")
+        update_logs(log_placeholder)
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+                chunks = chunker(content)
+                file_chunk_count = len(chunks)
+                total_chunks += file_chunk_count
+
+                for i, chunk in enumerate(chunks):
+                    summary = summarize_chunk(chunk, path)
+                    documents.append(
+                        Document(
+                            page_content=chunk,
+                            metadata={
+                                "source": path,
+                                "chunk_index": i,
+                                "summary": summary
+                            }
+                        )
+                    )
+
+                file_time = time.time() - file_start_time
+                st.session_state.thinking_logs.append(f"✅ Finished {path} with {file_chunk_count} chunks in {file_time:.2f}s")
+                update_logs(log_placeholder)
+
+        except Exception as e:
+            st.warning(f"❌ Failed to process {path}: {e}")
+            st.session_state.thinking_logs.append(f"❌ Error with {path}: {e}")
+            update_logs(log_placeholder)
+
+    rag_duration = time.time() - start_time
+    vectorstore = Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory=VECTOR_DB_DIR)
+
+    st.success("✅ Vector DB updated with summaries and saved locally.")
+    st.session_state.thinking_logs.append(f"📦 Indexed total of {total_chunks} chunks from {len(files_to_process)} files in {rag_duration:.2f}s")
+    update_logs(log_placeholder)
+
+    return vectorstore.as_retriever()
+
     reset_metadata_if_extensions_changed(EXTENSIONS)
     files_to_process = get_files_to_process(project_dir, extensions=EXTENSIONS)
     embeddings = OllamaEmbeddings(model=ollama_model, base_url=ollama_endpoint)
