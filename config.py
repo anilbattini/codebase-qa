@@ -9,7 +9,7 @@ class ProjectConfig:
     # Language configurations
     LANGUAGE_CONFIGS = {
         "android": {
-            "extensions": (".kt", ".kts", ".java", ".xml", ".gradle", ".properties"),
+            "extensions": (".kt", ".kts", ".java", ".xml", ".gradle", ".properties", ".toml"),
             "priority_files": ["activity", "fragment", "manifest", "mainactivity"],
             "priority_extensions": [".kt", ".java"],
             "secondary_extensions": [".xml"],
