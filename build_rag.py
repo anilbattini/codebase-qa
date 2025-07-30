@@ -1,5 +1,6 @@
 # build_rag.py
 
+import re
 import os
 import time
 import json
