@@ -15,6 +15,7 @@ class UIComponents:
         """Render the sidebar configuration section."""
         with st.sidebar:
             st.header("🔧 Configuration")
+            
             project_dir = st.text_input("📁 Project Directory", value="../")
             
             # Project type selection
@@ -43,6 +44,7 @@ class UIComponents:
             return project_dir, ollama_model, ollama_endpoint, force_rebuild, debug_mode
     
     def _render_project_type_selector(self, project_types):
+        """Render project type selection and change dialog."""
         if st.session_state.selected_project_type is None:
             st.warning("⚠️ Please select your project type to begin")
             
@@ -53,7 +55,7 @@ class UIComponents:
                 key="project_type_selector",  # Add unique key
                 help="Choose the primary programming language/framework of your project"
             )
-
+            
             if selected_type and selected_type != "":
                 if st.button("✅ Confirm Project Type"):
                     st.session_state.selected_project_type = selected_type
@@ -75,12 +77,13 @@ class UIComponents:
             st.info("💡 **Recommendation:** Backup your `vector_db` folder before proceeding")
             
             new_type = st.selectbox(
-                "🎯 New Project Type", 
+                "🎯 New Project Type",
                 project_types,
                 index=project_types.index(current_type) if current_type in project_types else 0
             )
             
             col1, col2, col3 = st.columns(3)
+            
             with col1:
                 if st.button("✅ Confirm Change"):
                     self._handle_project_type_change(new_type)
@@ -104,6 +107,7 @@ class UIComponents:
                 st.error(f"Error clearing vector DB: {e}")
         
         st.session_state.selected_project_type = new_type
+        
         for key in ['retriever', 'qa_chain', 'project_dir_used']:
             if key in st.session_state:
                 del st.session_state[key]
@@ -115,6 +119,7 @@ class UIComponents:
     def render_welcome_screen(self):
         """Render welcome screen when no project type is selected."""
         st.info("🎯 **Welcome!** Please select your project type in the sidebar to get started.")
+        
         st.markdown("""
         **Supported Project Types:**
         - **Android**: Kotlin/Java Android applications
@@ -131,22 +136,27 @@ class UIComponents:
         """Render custom CSS for styling."""
         st.markdown("""
         <style>
-            .streamlit-expanderHeader:hover {
-                background-color: #d4edda !important;
-                color: #155724 !important;
-                border-color: #c3e6cb !important;
-            }
-            
-            .streamlit-expanderHeader {
-                transition: background-color 0.3s ease, color 0.3s ease;
-            }
-            
-            /* Success color for chat items */
-            div[data-testid="stExpander"] > div > div > div {
-                border-left: 3px solid #28a745;
-            }
+        .stExpander > div:first-child {
+            background-color: #f0f2f6;
+        }
+        .stExpander > div:first-child:hover {
+            background-color: #e6e9ef;
+        }
+        
+        /* Custom styling for log text areas */
+        .stTextArea textarea {
+            font-family: 'Courier New', monospace !important;
+            font-size: 12px !important;
+            line-height: 1.4 !important;
+        }
+        
+        /* Ensure text areas scroll to bottom (for newer logs) */
+        .stTextArea textarea:focus {
+            scroll-behavior: smooth;
+        }
         </style>
         """, unsafe_allow_html=True)
+
     
     def render_chat_input(self, project_config):
         """Render chat input form."""
@@ -156,21 +166,58 @@ class UIComponents:
                 placeholder=f"What does this {project_config.project_type} project do?",
                 key="query_input"
             )
+            
             submitted = st.form_submit_button("🚀 Ask")
-        
-        return query, submitted
+            
+            return query, submitted
     
     def render_chat_history(self):
-        """Render chat history with auto-expansion."""
+        """Render chat history with auto-expansion and enhanced metadata support."""
         if st.session_state.get("chat_history"):
-            for i, (q, a, srcs, impact_files) in enumerate(reversed(st.session_state["chat_history"][-10:])):
+            for i, chat_item in enumerate(reversed(st.session_state["chat_history"][-10:])):
+                
+                # Handle both old format (4 items) and new format (5 items) for backward compatibility
+                if len(chat_item) == 4:
+                    q, a, srcs, impact_files = chat_item
+                    metadata = None
+                elif len(chat_item) == 5:
+                    q, a, srcs, impact_files, metadata = chat_item
+                else:
+                    # Skip malformed entries
+                    continue
+                
                 qa_key = f"qa_{len(st.session_state['chat_history']) - 1 - i}"
                 is_latest = qa_key == st.session_state.get("expand_latest")
                 
-                with st.expander(f"Q: {q}", expanded=is_latest):
+                # Create expander title with enhanced information
+                expander_title = f"Q: {q}"
+                if metadata and metadata.get('intent'):
+                    expander_title += f" [{metadata['intent'].title()}]"
+                
+                with st.expander(expander_title, expanded=is_latest):
                     st.markdown(f"**A:** {a}")
+                    
+                    # Show metadata if available (enhanced version)
+                    if metadata:
+                        with st.container():
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if metadata.get('intent'):
+                                    st.caption(f"🎯 **Intent:** {metadata['intent'].title()}")
+                                if metadata.get('confidence'):
+                                    confidence_pct = round(metadata['confidence'] * 100, 1)
+                                    st.caption(f"📊 **Confidence:** {confidence_pct}%")
+                            
+                            with col2:
+                                if metadata.get('rewritten_query') and metadata['rewritten_query'] != q:
+                                    st.caption(f"🔄 **Enhanced Query:** {metadata['rewritten_query'][:60]}...")
+                    
+                    # Show impact files
                     if impact_files:
                         st.markdown(f"**🔍 Impacted files:** {', '.join(impact_files)}")
+                    
+                    # Show sources with enhanced information
                     if srcs:
                         st.markdown("**🔎 Top Sources:**")
                         for doc in srcs[:5]:
@@ -179,8 +226,24 @@ class UIComponents:
                             chunk_type = md.get('type', 'text')
                             chunk_index = md.get('chunk_index', 0)
                             summary = md.get('summary', '')
-                            st.markdown(f"- `{source_name}` [{chunk_type}] (chunk {chunk_index}) | {summary}")
+                            
+                            # Enhanced source display
+                            source_line = f"- `{source_name}` [{chunk_type}]"
+                            
+                            # Add chunk name if available
+                            chunk_name = md.get('name')
+                            if chunk_name:
+                                source_line += f" *{chunk_name}*"
+                            
+                            source_line += f" (chunk {chunk_index})"
+                            
+                            # Add summary if available
+                            if summary:
+                                source_line += f" | {summary}"
+                            
+                            st.markdown(source_line)
                 
+                # Clean up expand_latest flag after showing
                 if is_latest and "expand_latest" in st.session_state:
                     del st.session_state["expand_latest"]
     
@@ -202,12 +265,39 @@ class UIComponents:
             st.error("Debug tools not available. Make sure debug_tools.py is in your project directory.")
     
     def render_processing_logs(self, log_placeholder, debug_mode):
-        """Render processing logs section."""
+        """Render processing logs section with scrollable display."""
         with st.expander("🛠️ Processing Logs", expanded=debug_mode):
             st.markdown("**Real-time processing status:**")
-            from build_rag import update_logs
-            update_logs(log_placeholder)
             
-            if st.button("🗑️ Clear Logs"):
-                st.session_state.thinking_logs = []
-                st.rerun()
+            # Get the logs from session state
+            logs = st.session_state.get('thinking_logs', [])
+            
+            if logs:
+                # Display logs as scrollable text area - each log on a new line
+                log_text = "\n".join(logs[-50:])  # Show last 50 logs to prevent overwhelming
+                
+                # Create scrollable text area with fixed height
+                st.text_area(
+                    label="Processing Logs",
+                    value=log_text,
+                    height=300,  # Fixed height to enable scrolling
+                    disabled=True,  # Make it read-only
+                    key="processing_logs_display",
+                    label_visibility="collapsed"  # Hide the label since we have markdown above
+                )
+            else:
+                st.info("No logs available yet.")
+            
+            # Action buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Clear Logs"):
+                    st.session_state.thinking_logs = []
+                    st.rerun()
+            
+            with col2:
+                if st.button("📋 Copy Logs"):
+                    if logs:
+                        # This will show a text area that users can select and copy from
+                        st.code("\n".join(logs), language="text")
+
