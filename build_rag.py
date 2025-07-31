@@ -14,6 +14,7 @@ from git_hash_tracker import FileHashTracker
 from config import ProjectConfig
 from metadata_extractor import MetadataExtractor
 from hierarchical_indexer import HierarchicalIndexer
+from langchain_community.vectorstores.utils import filter_complex_metadata
 
 VECTOR_DB_DIR = "vector_db"
 METADATA_FILE = os.path.join(VECTOR_DB_DIR, "code_relationships.json")
@@ -106,6 +107,17 @@ def build_code_relationship_map(documents: List[Document]) -> Dict[str, set]:
     
     return code_relationship_map
 
+def sanitize_metadata(meta: dict) -> dict:
+    return {
+        k: (
+            ', '.join(v) if isinstance(v, list) 
+            else str(v) if isinstance(v, (dict, set)) 
+            else v
+        )
+        for k, v in meta.items()
+        if v is None or isinstance(v, (str, int, float, bool, list, dict))
+    }
+
 def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, project_type=None):
     """Enhanced RAG building with improved metadata and indexing."""
     import streamlit as st
@@ -184,7 +196,13 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
             file_chunk_count = 0
             
             for i, chunk_data in enumerate(chunks):
-                chunk = chunk_data["content"]
+                # ✅ Defensive: if chunk_data is a raw string, wrap it as expected dict
+                if isinstance(chunk_data, str):
+                    chunk_data = {"content": chunk_data}
+
+                chunk = chunk_data.get("content")
+                if not isinstance(chunk, str):
+                    continue  # skip invalid chunk
                 fingerprint = chunk_fingerprint(chunk)
                 
                 # Skip duplicates
@@ -259,12 +277,46 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
         # Create/update vector store
         st.session_state.thinking_logs.append("🗄️ Storing vectors in database...")
         update_logs(log_placeholder)
-        
+
+        # for doc in documents:
+        #     doc.metadata = filter_complex_metadata(doc.metadata)
+        #     # doc.metadata = sanitize_metadata(doc.metadata) # I have to try this later to see any improvements in retreival
+
+        invalid_docs = [d for d in documents if not isinstance(d, Document)]
+        if invalid_docs:
+            st.warning(f"⚠️ Found {len(invalid_docs)} non-Document items in chunk list. Skipped.")
+
+        sanitized_docs = []
+
+        for doc in documents:
+            if not isinstance(doc, Document):
+                # Log or skip invalid objects
+                continue
+
+            if not hasattr(doc, "metadata") or not isinstance(doc.metadata, dict):
+                doc.metadata = {"source": "unknown (invalid metadata)"}
+            else:
+                try:
+                    # Apply Chroma-safe filter
+                    doc.metadata = sanitize_metadata(doc.metadata)
+                except Exception as e:
+                    st.warning(f"Metadata sanitization failed: {e}")
+                    doc.metadata = {"source": "error_during_filtering"}
+
+            # Flatten known list values to CSV strings
+            doc.metadata = {
+                k: ", ".join(v) if isinstance(v, list) else v
+                for k, v in doc.metadata.items() if v is not None
+            }
+
+            sanitized_docs.append(doc)
+
         vectorstore = Chroma.from_documents(
-            documents, 
-            embedding=embeddings, 
+            documents=sanitized_docs,
+            embedding=embeddings,
             persist_directory=VECTOR_DB_DIR
         )
+
     else:
         # Load existing vector store
         vectorstore = Chroma(persist_directory=VECTOR_DB_DIR, embedding_function=embeddings)
