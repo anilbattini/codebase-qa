@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional
 from langchain.docstore.document import Document
 from config import ProjectConfig
 
-
 class HierarchicalIndexer:
     def __init__(self, project_config: ProjectConfig, metadata_dir: str = "./vector_db"):
         self.project_config = project_config
@@ -19,13 +18,34 @@ class HierarchicalIndexer:
             "ui_level": self._create_ui_flow_index(documents),
             "dependency_level": self._create_dependency_index(documents),
             "api_level": self._create_api_index(documents),
+            "screen_input_validation_map": self._build_screen_input_validation_map(documents),
         }
-
         os.makedirs(self.metadata_dir, exist_ok=True)
         with open(self.hierarchy_file, "w") as f:
             json.dump(hierarchy, f, indent=2)
-
         return hierarchy
+
+    def _build_screen_input_validation_map(self, docs: List[Document]) -> Dict[str, Dict[str, List[str]]]:
+        """Map screen_name -> input field -> [validation_rules]."""
+        mapping = {}
+        for doc in docs:
+            screen = doc.metadata.get("screen_name")
+            if not screen:
+                continue
+            inputs = doc.metadata.get("input_fields", [])
+            validations = doc.metadata.get("validation_rules", [])
+            if not isinstance(inputs, list):
+                continue
+            if not (inputs or validations):
+                continue
+            screen_map = mapping.setdefault(screen, {})
+            for input_field in inputs:
+                if input_field not in screen_map:
+                    screen_map[input_field] = []
+                if isinstance(validations, list) and validations:
+                    screen_map[input_field].extend([v for v in validations if v not in screen_map[input_field]])
+        return mapping
+
 
     def _create_component_index(self, docs: List[Document]) -> Dict[str, Dict[str, List[str]]]:
         component_index = {

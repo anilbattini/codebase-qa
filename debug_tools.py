@@ -215,7 +215,7 @@ class DebugTools:
 
         for test_query in test_queries:
             st.write(f"\n**Testing query: '{test_query}'**")
-            test_docs = retriever.get_relevant_documents(test_query)
+            test_docs = retriever.invoke(test_query)
             st.write(f"Retrieved {len(test_docs)} documents:")
             for i, doc in enumerate(test_docs[:5]):
                 source = doc.metadata.get('source', 'Unknown')

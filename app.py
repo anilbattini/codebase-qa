@@ -19,6 +19,10 @@ rag_manager.initialize_session_state()
 # Render sidebar and get configuration
 project_dir, ollama_model, ollama_endpoint, force_rebuild, debug_mode = ui.render_sidebar_config()
 
+# ✅ Add Disable RAG (LLM only) toggle to sidebar
+st.sidebar.markdown("## 🔧 Advanced Options")
+st.sidebar.checkbox("Disable RAG (query LLM directly)", key="disable_rag")
+
 # Check if project type is selected
 if st.session_state.get("selected_project_type") is None:
     ui.render_welcome_screen()

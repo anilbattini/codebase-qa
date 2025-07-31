@@ -189,7 +189,6 @@ class UIComponents:
                 qa_key = f"qa_{len(st.session_state['chat_history']) - 1 - i}"
                 is_latest = qa_key == st.session_state.get("expand_latest")
                 
-                # Create expander title with enhanced information
                 expander_title = f"Q: {q}"
                 if metadata and metadata.get('intent'):
                     expander_title += f" [{metadata['intent'].title()}]"
@@ -201,51 +200,57 @@ class UIComponents:
                     if metadata:
                         with st.container():
                             col1, col2 = st.columns(2)
-                            
+
                             with col1:
                                 if metadata.get('intent'):
                                     st.caption(f"🎯 **Intent:** {metadata['intent'].title()}")
-                                if metadata.get('confidence'):
+                                if metadata.get('confidence') is not None:
                                     confidence_pct = round(metadata['confidence'] * 100, 1)
                                     st.caption(f"📊 **Confidence:** {confidence_pct}%")
-                            
+
                             with col2:
                                 if metadata.get('rewritten_query') and metadata['rewritten_query'] != q:
                                     st.caption(f"🔄 **Enhanced Query:** {metadata['rewritten_query'][:60]}...")
-                    
+
                     # Show impact files
                     if impact_files:
                         st.markdown(f"**🔍 Impacted files:** {', '.join(impact_files)}")
-                    
-                    # Show sources with enhanced information
+
+                    # Show source chunks
                     if srcs:
                         st.markdown("**🔎 Top Sources:**")
                         for doc in srcs[:5]:
+                            # ⇨ Defensive check: document or string
+                            if isinstance(doc, str):
+                                st.markdown(f"- `{doc}`")
+                                continue
+                            
+                            if not hasattr(doc, "metadata") or not isinstance(doc.metadata, dict):
+                                st.markdown(f"- [Unstructured Source]")
+                                continue
+                            
                             md = doc.metadata
                             source_name = md.get('source', 'Unknown')
                             chunk_type = md.get('type', 'text')
                             chunk_index = md.get('chunk_index', 0)
                             summary = md.get('summary', '')
-                            
-                            # Enhanced source display
+
                             source_line = f"- `{source_name}` [{chunk_type}]"
-                            
-                            # Add chunk name if available
+
                             chunk_name = md.get('name')
                             if chunk_name:
                                 source_line += f" *{chunk_name}*"
-                            
+
                             source_line += f" (chunk {chunk_index})"
-                            
-                            # Add summary if available
+
                             if summary:
                                 source_line += f" | {summary}"
-                            
+
                             st.markdown(source_line)
-                
-                # Clean up expand_latest flag after showing
+
                 if is_latest and "expand_latest" in st.session_state:
                     del st.session_state["expand_latest"]
+
     
     def render_debug_section(self, project_config, ollama_model, ollama_endpoint, project_dir):
         """Render debug tools section."""
