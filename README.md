@@ -141,3 +141,34 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Powered by LangChain for RAG and Ollama for local LLMs.
 - Uses Chroma for vector storage.
 
+
+
+## 🔧 Backlog & Fine-Tuning Tasks
+
+These items focus on enhancing the precision, performance, and observability of context-aware retrieval in the system:
+
+### 📦 Contextual Chunking & Metadata
+- Improve chunking logic to better align with semantic boundaries.
+- Fine-tune metadata extraction to enrich context awareness for downstream retrieval.
+
+### 💬 Query Rewriting & Prompt Caching
+- Rewrite user queries into richer retrieval prompts.
+- Integrate cache-based context to boost relevance of RAG-generated responses.
+
+### 🐞 Debugging UI Enhancements
+- Build a real-time debugging UI.
+- Display live logs for background tasks such as:
+  - Chunk construction
+  - Metadata sanitization
+  - Index updates
+
+### 🧠 Reinforcement Learning & Evaluation
+- Introduce reinforcement learning during chunking and metadata processing.
+- Evaluate effectiveness using a predefined question set.
+- Adjust logic dynamically based on retrieval quality of responses.
+
+---
+
+> _Note: All systems are in place—these backlog items are focused on refinement and optimization._
+
+
