@@ -10,6 +10,9 @@ The tool supports various project types (e.g., Android, iOS, Python, JavaScript/
 
 This architecture reduces custom code by leveraging established libraries, making it maintainable and performant. It evolved from a more complex 15-file system to a streamlined setup with 2-3 core files, while providing advanced features like hierarchical indexing and query intent classification.
 
+A preview shown with android project chosen:
+<img width="1906" height="850" alt="Screenshot 2025-07-31 at 2 16 13 PM" src="https://github.com/user-attachments/assets/c9341a02-7e9d-4b13-aaf6-ccfe1c7c4c58" />
+
 ## Key Features
 
 - **Project Type Detection**: Automatically detects or lets you select project types (e.g., Android, Python, JavaScript) and processes relevant file extensions.
