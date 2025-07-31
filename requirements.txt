@@ -1,0 +1,8 @@
+langchain
+langchain-chroma
+langchain-community 
+langchain-ollama
+numpy
+pathspec
+streamlit
+torch
