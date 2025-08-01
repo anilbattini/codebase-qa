@@ -1,222 +1,190 @@
-# git_hash_tracker.py
-
 import os
-import subprocess
 import hashlib
 import json
-import time
-from typing import Dict, List, Optional, Tuple
+import subprocess
+from logger import log_highlight, log_to_sublog
+from config import ProjectConfig
 
 class FileHashTracker:
-    """Universal file tracking system with Git integration and fallback hashing."""
-    
-    def __init__(self, project_dir: str, metadata_dir: str):
-        self.project_dir = project_dir
-        self.metadata_dir = metadata_dir
-        self.git_metadata_file = os.path.join(metadata_dir, "git_tracking.json")
-        self.custom_metadata_file = os.path.join(metadata_dir, "file_hashes.json")
-        self.is_git_repo = self._check_git_repo()
-        
-    def _check_git_repo(self) -> bool:
-        """Check if the project directory is a Git repository."""
-        git_dir = os.path.join(self.project_dir, '.git')
-        return os.path.exists(git_dir) and self._git_command_available()
-    
-    def _git_command_available(self) -> bool:
-        """Check if Git command is available."""
+    """
+    Tracks changed/new files between RAG runs using either Git commit state or a content-based hash map.
+    All logs are project-local via logger.py.
+    """
+
+    def __init__(self, project_dir, tracking_dir):
+        self.project_dir = os.path.abspath(project_dir)
+        self.project_config = ProjectConfig(project_dir=project_dir)
+        self.tracking_dir = tracking_dir or self.project_config.get_db_dir()
+        self.hash_file = self.project_config.get_hash_file()
+        self.git_commit_file = self.project_config.get_git_commit_file()
+        self.project_config.create_directories()
+
+    def get_changed_files(self, extensions):
+        """Returns list of changed/new files for processing."""
+        log_highlight("FileHashTracker.get_changed_files")
+        method = self._detect_tracking_method()
+        if method == "git":
+            changes = self._get_git_changed_files(extensions)
+        else:
+            changes = self._get_content_hash_changed_files(extensions)
+        return changes
+
+    def _detect_tracking_method(self):
+        # Prefer git if .git present and accessible, else content-hash
+        if os.path.isdir(os.path.join(self.project_dir, ".git")):
+            try:
+                subprocess.check_output(["git", "status"], cwd=self.project_dir)
+                return "git"
+            except Exception:
+                pass
+        return "content-hash"
+
+    def _get_git_changed_files(self, extensions):
+        """Get changed and untracked files via Git."""
         try:
-            subprocess.run(['git', '--version'], capture_output=True, check=True)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False
-    
-    def _run_git_command(self, args: List[str]) -> Optional[str]:
-        """Run a Git command and return output."""
-        try:
-            result = subprocess.run(
-                ['git'] + args,
+            current_commit = self._get_current_git_commit()
+            last_commit = self._load_last_commit()
+            
+            # If no previous commit record exists, process all files (fresh build)
+            if not last_commit:
+                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", "No previous commit record found - processing all files for fresh build")
+                # Get all tracked files that match extensions
+                all_files = subprocess.check_output(
+                    ["git", "ls-files"],
+                    cwd=self.project_dir,
+                    encoding="utf-8"
+                ).splitlines()
+                
+                # Filter by extensions and respect .gitignore
+                gitignore_patterns = self._get_gitignore_patterns()
+                result = []
+                for file_path in all_files:
+                    if file_path.endswith(tuple(extensions)):
+                        abs_path = os.path.join(self.project_dir, file_path)
+                        if os.path.isfile(abs_path) and not self._matches_gitignore_patterns(abs_path, gitignore_patterns):
+                            result.append(abs_path)
+                
+                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                              f"Git-detected all files (fresh build): {len(result)} files")
+                return result
+            
+            if last_commit == current_commit:
+                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", "No files changed since last indexing (git).")
+                return []
+            
+            # List all changed/untracked files
+            changed_files = subprocess.check_output(
+                ["git", "ls-files", "--others", "--modified", "--exclude-standard"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return result.stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return None
+                encoding="utf-8"
+            ).splitlines()
+            changed_files = [os.path.join(self.project_dir, f) for f in changed_files]
+            result = [f for f in changed_files if f.endswith(tuple(extensions)) and os.path.isfile(f)]
+            # Log absolute paths for debugging (logs are system-specific)
+            log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                          f"Git-detected changed files: {len(result)} files")
+            return result
+        except Exception as e:
+            log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                          f"[WARN] Git tracking failed: {e}; falling back to content-hash.")
+            return self._get_content_hash_changed_files(extensions)
+
+    def _get_content_hash_changed_files(self, extensions):
+        """Fallback: compare file hashes to previous run."""
+        old_hashes = self._load_hash_file()
+        new_hashes = {}
+        changed_files = []
+        
+        # If no previous hash file exists, process all files (fresh build)
+        if not old_hashes:
+            log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", "No previous hash file found - processing all files for fresh build")
+        
+        # Get gitignore patterns to respect them
+        gitignore_patterns = self._get_gitignore_patterns()
+        
+        for root, dirs, files in os.walk(self.project_dir):
+            # Skip directories that match gitignore patterns
+            dirs[:] = [d for d in dirs if not self._matches_gitignore_patterns(os.path.join(root, d), gitignore_patterns)]
+            
+            for fname in files:
+                if fname.endswith(tuple(extensions)):
+                    path = os.path.join(root, fname)
+                    
+                    # Skip files that match gitignore patterns
+                    if self._matches_gitignore_patterns(path, gitignore_patterns):
+                        continue
+                    
+                    try:
+                        h = self._file_hash(path)
+                        new_hashes[path] = h
+                        # If no previous hashes (fresh build) or hash changed, include file
+                        if not old_hashes or old_hashes.get(path) != h:
+                            changed_files.append(path)
+                    except Exception as e:
+                        log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", f"Failed to hash {path}: {e}")
+        # Log absolute paths for debugging (logs are system-specific)
+        log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                      f"Content-hash changed files: {len(changed_files)} files")
+        return changed_files
     
-    def _compute_file_hash(self, filepath: str) -> Optional[str]:
-        """Compute SHA-256 hash of file content."""
-        try:
-            with open(filepath, "rb") as f:
-                content = f.read()
-                return hashlib.sha256(content).hexdigest()
-        except (IOError, OSError):
-            return None
-    
-    def _get_git_file_hashes(self) -> Dict[str, str]:
-        """Get Git blob SHA for each tracked file."""
-        if not self.is_git_repo:
-            return {}
-        
-        output = self._run_git_command(['ls-files', '-s'])
-        if not output:
-            return {}
-        
-        file_hashes = {}
-        for line in output.split('\n'):
-            if line.strip():
-                # Format: <mode> <object> <stage> <file>
-                parts = line.split('\t')
-                if len(parts) == 2:
-                    mode_info = parts[0].split()
-                    if len(mode_info) >= 2:
-                        blob_sha = mode_info[1]
-                        rel_path = parts[1]
-                        abs_path = os.path.join(self.project_dir, rel_path)
-                        if os.path.exists(abs_path):
-                            file_hashes[abs_path] = blob_sha
-        
-        return file_hashes
-    
-    def _get_current_commit(self) -> Optional[str]:
-        """Get current Git commit SHA."""
-        if not self.is_git_repo:
-            return None
-        return self._run_git_command(['rev-parse', 'HEAD'])
-    
-    def _get_git_tracked_files(self, extensions: Tuple[str, ...]) -> List[str]:
-        """Get list of Git-tracked files with specified extensions."""
-        if not self.is_git_repo:
-            return []
-        
-        output = self._run_git_command(['ls-files'])
-        if not output:
-            return []
-        
-        tracked_files = []
-        for line in output.split('\n'):
-            if line.strip() and line.endswith(extensions):
-                abs_path = os.path.join(self.project_dir, line.strip())
-                if os.path.exists(abs_path):
-                    tracked_files.append(abs_path)
-        
-        return tracked_files
-    
-    def _get_all_files_fallback(self, extensions: Tuple[str, ...]) -> List[str]:
-        """Fallback file discovery using os.walk with .gitignore support."""
-        from pathspec import PathSpec
-        
-        # Load .gitignore if exists
-        ignore_spec = None
+    def _get_gitignore_patterns(self):
+        """Get gitignore patterns from .gitignore file."""
         gitignore_path = os.path.join(self.project_dir, ".gitignore")
+        patterns = []
+        
         if os.path.exists(gitignore_path):
             try:
                 with open(gitignore_path, 'r') as f:
-                    ignore_spec = PathSpec.from_lines("gitwildmatch", f.readlines())
-            except Exception:
-                pass
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            patterns.append(line)
+            except Exception as e:
+                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", f"Failed to read .gitignore: {e}")
         
-        valid_files = []
-        for root, _, files in os.walk(self.project_dir):
-            for file in files:
-                if file.endswith(extensions):
-                    full_path = os.path.join(root, file)
-                    rel_path = os.path.relpath(full_path, self.project_dir)
-                    
-                    # Skip if matches .gitignore patterns
-                    if ignore_spec and ignore_spec.match_file(rel_path):
-                        continue
-                    
-                    valid_files.append(full_path)
-        
-        return valid_files
+        return patterns
     
-    def get_all_trackable_files(self, extensions: Tuple[str, ...]) -> List[str]:
-        """Get all files that can be tracked, using Git or filesystem discovery."""
-        if self.is_git_repo:
-            return self._get_git_tracked_files(extensions)
+    def _matches_gitignore_patterns(self, path, patterns):
+        """Check if path matches any gitignore pattern."""
+        import fnmatch
+        
+        # Convert to relative path from project root
+        rel_path = os.path.relpath(path, self.project_dir)
+        
+        for pattern in patterns:
+            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(os.path.basename(path), pattern):
+                return True
+        
+        return False
+
+    def update_tracking_info(self, files_processed):
+        """Update hash/cache after indexing."""
+        method = self._detect_tracking_method()
+        if method == "git":
+            self._update_git_tracking(files_processed)
         else:
-            return self._get_all_files_fallback(extensions)
+            self._update_custom_tracking(files_processed)
+        log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                      f"Tracking info updated ({method}) for {len(files_processed)} files.")
     
-    def get_changed_files(self, extensions: Tuple[str, ...]) -> List[str]:
-        """Get list of files that have changed since last tracking."""
-        all_files = self.get_all_trackable_files(extensions)
-        
-        if self.is_git_repo:
-            return self._get_changed_files_git(all_files)
-        else:
-            return self._get_changed_files_custom(all_files)
-    
-    def _get_changed_files_git(self, all_files: List[str]) -> List[str]:
-        """Get changed files using Git tracking."""
-        # Load existing Git metadata
-        git_metadata = {}
-        if os.path.exists(self.git_metadata_file):
-            try:
-                with open(self.git_metadata_file, 'r') as f:
-                    git_metadata = json.load(f)
-            except Exception:
-                pass
-        
-        # Get current Git file hashes
-        current_hashes = self._get_git_file_hashes()
-        
-        changed_files = []
-        for file_path in all_files:
-            current_hash = current_hashes.get(file_path)
-            stored_info = git_metadata.get(file_path, {})
-            stored_hash = stored_info.get('blob_sha')
-            
-            if current_hash and (not stored_hash or current_hash != stored_hash):
-                changed_files.append(file_path)
-        
-        return changed_files
-    
-    def _get_changed_files_custom(self, all_files: List[str]) -> List[str]:
-        """Get changed files using custom hashing."""
-        # Load existing hash metadata
-        hash_metadata = {}
-        if os.path.exists(self.custom_metadata_file):
-            try:
-                with open(self.custom_metadata_file, 'r') as f:
-                    hash_metadata = json.load(f)
-            except Exception:
-                pass
-        
-        changed_files = []
-        for file_path in all_files:
-            current_hash = self._compute_file_hash(file_path)
-            stored_info = hash_metadata.get(file_path, {})
-            stored_hash = stored_info.get('content_hash')
-            
-            if current_hash and (not stored_hash or current_hash != stored_hash):
-                changed_files.append(file_path)
-        
-        return changed_files
-    
-    def update_tracking_info(self, processed_files: List[str]):
-        """Update tracking information for successfully processed files."""
-        os.makedirs(self.metadata_dir, exist_ok=True)
-        
-        if self.is_git_repo:
-            self._update_git_tracking(processed_files)
-        else:
-            self._update_custom_tracking(processed_files)
-    
-    def _update_git_tracking(self, processed_files: List[str]):
+    def _update_git_tracking(self, processed_files):
         """Update Git-based tracking metadata."""
+        import time
+        import json
+        
         # Load existing metadata
         metadata = {}
-        if os.path.exists(self.git_metadata_file):
+        git_tracking_file = os.path.join(self.tracking_dir, "git_tracking.json")
+        if os.path.exists(git_tracking_file):
             try:
-                with open(self.git_metadata_file, 'r') as f:
+                with open(git_tracking_file, 'r') as f:
                     metadata = json.load(f)
             except Exception:
                 pass
         
         # Get current Git info
+        current_commit = self._get_current_git_commit()
         current_hashes = self._get_git_file_hashes()
-        current_commit = self._get_current_commit()
         
         # Update with new information
         for file_path in processed_files:
@@ -229,23 +197,27 @@ class FileHashTracker:
                 }
         
         # Save updated metadata
-        with open(self.git_metadata_file, 'w') as f:
+        with open(git_tracking_file, 'w') as f:
             json.dump(metadata, f, indent=2)
     
-    def _update_custom_tracking(self, processed_files: List[str]):
+    def _update_custom_tracking(self, processed_files):
         """Update custom hash-based tracking metadata."""
+        import time
+        import json
+        
         # Load existing metadata
         metadata = {}
-        if os.path.exists(self.custom_metadata_file):
+        custom_tracking_file = os.path.join(self.tracking_dir, "file_hashes.json")
+        if os.path.exists(custom_tracking_file):
             try:
-                with open(self.custom_metadata_file, 'r') as f:
+                with open(custom_tracking_file, 'r') as f:
                     metadata = json.load(f)
             except Exception:
                 pass
         
         # Update with new hashes
         for file_path in processed_files:
-            current_hash = self._compute_file_hash(file_path)
+            current_hash = self._file_hash(file_path)
             if current_hash:
                 # Get file stats for additional tracking info
                 try:
@@ -265,35 +237,99 @@ class FileHashTracker:
                     }
         
         # Save updated metadata
-        with open(self.custom_metadata_file, 'w') as f:
+        with open(custom_tracking_file, 'w') as f:
             json.dump(metadata, f, indent=2)
     
-    def get_tracking_status(self) -> Dict[str, any]:
-        """Get current tracking status and statistics."""
-        status = {
-            'tracking_method': 'git' if self.is_git_repo else 'custom',
-            'is_git_repo': self.is_git_repo,
-            'project_dir': self.project_dir,
-        }
+    def _get_git_file_hashes(self):
+        """Get Git blob SHA for each tracked file."""
+        if not self._detect_tracking_method() == "git":
+            return {}
         
-        if self.is_git_repo:
-            status['current_commit'] = self._get_current_commit()
-            if os.path.exists(self.git_metadata_file):
-                try:
-                    with open(self.git_metadata_file, 'r') as f:
-                        metadata = json.load(f)
-                        status['tracked_files_count'] = len(metadata)
-                        status['last_update'] = max([info.get('processed_at', 0) for info in metadata.values()], default=0)
-                except Exception:
-                    pass
+        try:
+            output = subprocess.check_output(
+                ["git", "ls-files", "-s"],
+                cwd=self.project_dir,
+                encoding="utf-8"
+            )
+            
+            file_hashes = {}
+            for line in output.split('\n'):
+                if line.strip():
+                    # Format: <mode> <object> <stage> <file>
+                    parts = line.split('\t')
+                    if len(parts) == 2:
+                        mode_info = parts[0].split()
+                        if len(mode_info) >= 2:
+                            blob_sha = mode_info[1]
+                            rel_path = parts[1]
+                            abs_path = os.path.join(self.project_dir, rel_path)
+                            if os.path.exists(abs_path):
+                                file_hashes[abs_path] = blob_sha
+            
+            return file_hashes
+        except Exception:
+            return {}
+
+    def get_tracking_status(self):
+        """Returns current status, either git or content hash mode."""
+        method = self._detect_tracking_method()
+        status = {"tracking_method": method}
+        if method == "git":
+            status["current_commit"] = self._get_current_git_commit()
         else:
-            if os.path.exists(self.custom_metadata_file):
-                try:
-                    with open(self.custom_metadata_file, 'r') as f:
-                        metadata = json.load(f)
-                        status['tracked_files_count'] = len(metadata)
-                        status['last_update'] = max([info.get('processed_at', 0) for info in metadata.values()], default=0)
-                except Exception:
-                    pass
-        
+            status["file_count"] = len(self._load_hash_file())
         return status
+
+    def _file_hash(self, file_path):
+        """Return SHA256 for file."""
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            while True:
+                chunk = f.read(4096)
+                if not chunk:
+                    break
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _load_hash_file(self):
+        if os.path.isfile(self.hash_file):
+            with open(self.hash_file, "r") as f:
+                return json.load(f)
+        return {}
+
+    def _save_hash_file(self, hashes):
+        with open(self.hash_file, "w") as f:
+            json.dump(hashes, f, indent=2)
+
+    def _get_current_git_commit(self):
+        try:
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.project_dir,
+                encoding="utf-8"
+            ).strip()
+            return commit
+        except Exception:
+            return None
+
+    def _load_last_commit(self):
+        if os.path.isfile(self.git_commit_file):
+            with open(self.git_commit_file, "r") as f:
+                d = json.load(f)
+                return d.get("commit")
+        return None
+
+    def _save_current_git_commit(self):
+        commit = self._get_current_git_commit()
+        if commit:
+            with open(self.git_commit_file, "w") as f:
+                json.dump({"commit": commit}, f)
+
+# --------------- CODE CHANGE SUMMARY ---------------
+# REMOVED
+# - All in-method print statements and ad-hoc logging; now routed exclusively through logger.py for DRY, centralized logging.
+# - Old/duplicated fallback logic for file changes, reduced by clearer try/fallback structure.
+# ADDED
+# - log_highlight/log_to_sublog used for tracking/git/content-hash logs.
+# - Unified status/caching logic for both git and non-git contexts.
+# - Clean entrypoint for downstream code to query tracking method, changed files, update state.
