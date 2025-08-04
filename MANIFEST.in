@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+include requirements.txt
+include pyproject.toml
+include setup.py
+
+recursive-include codebase_qa *.py
+recursive-include codebase_qa debug_tools *.py
+recursive-include codebase_qa debug_tools *.md
+
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co] 

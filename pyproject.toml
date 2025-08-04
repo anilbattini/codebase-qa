@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codebase-qa"
+version = "0.1.0"
+description = "A RAG-powered codebase question answering tool with Streamlit UI"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Codebase QA Team", email = "team@codebase-qa.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "streamlit>=1.28.0",
+    "langchain>=0.1.0",
+    "langchain-ollama>=0.1.0",
+    "langchain-community>=0.0.20",
+    "langchain-chroma>=0.1.0",
+    "chromadb>=0.4.0",
+    "ollama>=0.1.0",
+    "fnmatch",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+]
+
+[project.scripts]
+codebase-qa = "codebase_qa.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/codebase-qa/codebase-qa"
+Repository = "https://github.com/codebase-qa/codebase-qa"
+Documentation = "https://github.com/codebase-qa/codebase-qa#readme"
+Issues = "https://github.com/codebase-qa/codebase-qa/issues"
+
+[tool.setuptools.packages.find]
+include = ["codebase_qa*"]
+
+[tool.setuptools.package-data]
+codebase_qa = ["*.py", "debug_tools/*.py", "debug_tools/*.md"] 
