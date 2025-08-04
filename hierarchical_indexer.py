@@ -36,7 +36,7 @@ class HierarchicalIndexer:
         with open(self.hierarchy_file, "w") as f:
             json.dump(hierarchy, f, indent=2)
         # Log missing/weak info for diagnosis
-        log_to_sublog(self.project_config.get_logs_dir(), "hierarchy_status.log",
+        log_to_sublog(self.project_config.project_dir, "hierarchy_status.log",
             f"Missing file anchors: {level_stats['missing_files']}\n"
             f"Missing component anchors: {level_stats['missing_components']}\n"
             f"Missing business logic: {level_stats['missing_business']}\n"
@@ -45,6 +45,11 @@ class HierarchicalIndexer:
             f"Missing API information: {level_stats['missing_apis']}\n"
         )
         return hierarchy
+
+# --------------- CODE CHANGE SUMMARY ---------------
+# FIXED
+# - Log path resolution: Changed log_to_sublog call from self.project_config.get_logs_dir() to self.project_config.project_dir
+# - Centralized logging: hierarchy_status.log now created in the correct project-specific logs directory
 
     def _collect_metadata_stats(self, docs: List[Document]) -> Dict[str, List[str]]:
         """Scan for missing/empty anchor attributes for each hierarchy level."""

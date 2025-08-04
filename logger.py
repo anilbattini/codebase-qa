@@ -81,7 +81,15 @@ def _get_logs_dir(project_dir):
     
     # Only create logs directory if project type is selected and not unknown
     if project_type and project_type != "unknown":
+        # Build the logs directory path
         logs_dir = os.path.join(abs_project_dir, f"codebase-qa_{project_type}", "logs")
+        
+        # CRITICAL: Prevent nested logs directories
+        # If the path already contains '/logs', don't append another one
+        if '/logs' in logs_dir and logs_dir.endswith('/logs'):
+            # Remove any trailing /logs to prevent nesting
+            logs_dir = logs_dir.replace('/logs/logs', '/logs').replace('/logs/logs/', '/logs/')
+        
         # Ensure the directory exists
         os.makedirs(logs_dir, exist_ok=True)
         return logs_dir

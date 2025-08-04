@@ -47,29 +47,30 @@ class FileHashTracker:
             
             # If no previous commit record exists, process all files (fresh build)
             if not last_commit:
-                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", "No previous commit record found - processing all files for fresh build")
-                # Get all tracked files that match extensions
+                log_to_sublog(self.project_dir, "file_tracking.log", "No previous commit record found - processing all files for fresh build")
+                # Get all tracked files that match extensions, respecting .gitignore
                 all_files = subprocess.check_output(
                     ["git", "ls-files"],
                     cwd=self.project_dir,
                     encoding="utf-8"
                 ).splitlines()
                 
-                # Filter by extensions and respect .gitignore
-                gitignore_patterns = self._get_gitignore_patterns()
+                # Filter by extensions and respect hierarchical .gitignore
                 result = []
                 for file_path in all_files:
                     if file_path.endswith(tuple(extensions)):
                         abs_path = os.path.join(self.project_dir, file_path)
-                        if os.path.isfile(abs_path) and not self._matches_gitignore_patterns(abs_path, gitignore_patterns):
+                        if os.path.isfile(abs_path) and not self._should_ignore_file(abs_path):
                             result.append(abs_path)
+                        else:
+                            log_to_sublog(self.project_dir, "file_tracking.log", f"Skipping gitignored file: {file_path}")
                 
-                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                log_to_sublog(self.project_dir, "file_tracking.log",
                               f"Git-detected all files (fresh build): {len(result)} files")
                 return result
             
             if last_commit == current_commit:
-                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", "No files changed since last indexing (git).")
+                log_to_sublog(self.project_dir, "file_tracking.log", "No files changed since last indexing (git).")
                 return []
             
             # List all changed/untracked files
@@ -81,13 +82,23 @@ class FileHashTracker:
             changed_files = [os.path.join(self.project_dir, f) for f in changed_files]
             result = [f for f in changed_files if f.endswith(tuple(extensions)) and os.path.isfile(f)]
             # Log absolute paths for debugging (logs are system-specific)
-            log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+            log_to_sublog(self.project_dir, "file_tracking.log",
                           f"Git-detected changed files: {len(result)} files")
             return result
         except Exception as e:
-            log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+            log_to_sublog(self.project_dir, "file_tracking.log",
                           f"[WARN] Git tracking failed: {e}; falling back to content-hash.")
             return self._get_content_hash_changed_files(extensions)
+
+# --------------- CODE CHANGE SUMMARY ---------------
+# FIXED
+# - Log path resolution: Changed all log_to_sublog calls from self.project_config.get_logs_dir() to self.project_dir
+# - Centralized logging: All logs now use the centralized logger path resolution to prevent scattered log files
+# - File tracking logs: file_tracking.log now created in the correct project-specific logs directory
+# - Hierarchical .gitignore support: Each .gitignore file now applies only to its directory and subdirectories
+# - Always ignore codebase-qa tool directories: Added automatic filtering of tool directories
+# - Improved pattern matching: Fixed **/build, /build, and other complex gitignore patterns
+# - Config ignore patterns integration: Added config ignore patterns to gitignore processing
 
     def _get_content_hash_changed_files(self, extensions):
         """Fallback: compare file hashes to previous run."""
@@ -97,21 +108,19 @@ class FileHashTracker:
         
         # If no previous hash file exists, process all files (fresh build)
         if not old_hashes:
-            log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", "No previous hash file found - processing all files for fresh build")
-        
-        # Get gitignore patterns to respect them
-        gitignore_patterns = self._get_gitignore_patterns()
+            log_to_sublog(self.project_dir, "file_tracking.log", "No previous hash file found - processing all files for fresh build")
         
         for root, dirs, files in os.walk(self.project_dir):
-            # Skip directories that match gitignore patterns
-            dirs[:] = [d for d in dirs if not self._matches_gitignore_patterns(os.path.join(root, d), gitignore_patterns)]
+            # Skip directories that should be ignored
+            dirs[:] = [d for d in dirs if not self._should_ignore_file(os.path.join(root, d))]
             
             for fname in files:
                 if fname.endswith(tuple(extensions)):
                     path = os.path.join(root, fname)
                     
-                    # Skip files that match gitignore patterns
-                    if self._matches_gitignore_patterns(path, gitignore_patterns):
+                    # Skip files that should be ignored
+                    if self._should_ignore_file(path):
+                        log_to_sublog(self.project_dir, "file_tracking.log", f"Skipping gitignored file: {os.path.relpath(path, self.project_dir)}")
                         continue
                     
                     try:
@@ -121,18 +130,28 @@ class FileHashTracker:
                         if not old_hashes or old_hashes.get(path) != h:
                             changed_files.append(path)
                     except Exception as e:
-                        log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", f"Failed to hash {path}: {e}")
+                        log_to_sublog(self.project_dir, "file_tracking.log", f"Failed to hash {path}: {e}")
         # Log absolute paths for debugging (logs are system-specific)
-        log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+                    log_to_sublog(self.project_dir, "file_tracking.log",
                       f"Content-hash changed files: {len(changed_files)} files")
         return changed_files
     
     def _get_gitignore_patterns(self):
-        """Get gitignore patterns from .gitignore file."""
-        gitignore_path = os.path.join(self.project_dir, ".gitignore")
+        """Get gitignore patterns from all .gitignore files in the project and config ignore patterns."""
         patterns = []
         
-        if os.path.exists(gitignore_path):
+        # Find all .gitignore files in the project
+        gitignore_files = []
+        for root, dirs, files in os.walk(self.project_dir):
+            if '.gitignore' in files:
+                gitignore_files.append(os.path.join(root, '.gitignore'))
+        
+        # Also check the root .gitignore
+        root_gitignore = os.path.join(self.project_dir, ".gitignore")
+        if os.path.exists(root_gitignore) and root_gitignore not in gitignore_files:
+            gitignore_files.append(root_gitignore)
+        
+        for gitignore_path in gitignore_files:
             try:
                 with open(gitignore_path, 'r') as f:
                     for line in f:
@@ -140,20 +159,168 @@ class FileHashTracker:
                         if line and not line.startswith('#'):
                             patterns.append(line)
             except Exception as e:
-                log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log", f"Failed to read .gitignore: {e}")
+                log_to_sublog(self.project_dir, "file_tracking.log", f"Failed to read {gitignore_path}: {e}")
+        
+        # Add config ignore patterns
+        config_ignore_patterns = self.project_config.get_ignore_patterns()
+        patterns.extend(config_ignore_patterns)
+        
+        # Always ignore codebase-qa tool directories
+        patterns.extend([
+            "codebase-qa",
+            "codebase-qa_*",
+            "**/codebase-qa",
+            "**/codebase-qa_*"
+        ])
         
         return patterns
     
     def _matches_gitignore_patterns(self, path, patterns):
-        """Check if path matches any gitignore pattern."""
+        """Check if path matches any gitignore pattern using proper gitignore logic."""
         import fnmatch
+        import re
         
         # Convert to relative path from project root
         rel_path = os.path.relpath(path, self.project_dir)
         
         for pattern in patterns:
-            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(os.path.basename(path), pattern):
+            # Skip empty patterns
+            if not pattern:
+                continue
+                
+            # Handle different pattern types
+            if pattern.startswith('/'):
+                # Absolute pattern from root
+                if rel_path == pattern[1:]:
+                    return True
+            elif pattern.endswith('/'):
+                # Directory pattern
+                dir_pattern = pattern[:-1]
+                if rel_path.startswith(dir_pattern + '/') or rel_path == dir_pattern:
+                    return True
+            elif pattern.startswith('**/'):
+                # Recursive pattern
+                suffix = pattern[3:]
+                if rel_path.endswith(suffix) or rel_path.endswith('/' + suffix):
+                    return True
+                # Also check if any part of the path matches the suffix
+                path_parts = rel_path.split('/')
+                for part in path_parts:
+                    if fnmatch.fnmatch(part, suffix):
+                        return True
+            elif '**' in pattern:
+                # Complex recursive pattern
+                parts = pattern.split('**')
+                if len(parts) == 2:
+                    prefix, suffix = parts
+                    if rel_path.startswith(prefix) and rel_path.endswith(suffix):
+                        return True
+            else:
+                # Simple pattern
+                if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(os.path.basename(path), pattern):
+                    return True
+                
+                # Handle directory matching for patterns like "build", ".gradle"
+                if '/' not in pattern and os.path.isdir(path):
+                    if fnmatch.fnmatch(os.path.basename(path), pattern):
+                        return True
+        
+        return False
+
+    def _should_ignore_file(self, file_path):
+        """Check if a file should be ignored based on hierarchical .gitignore rules."""
+        import fnmatch
+        
+        # Convert to relative path from project root
+        rel_path = os.path.relpath(file_path, self.project_dir)
+        
+        # Always ignore codebase-qa tool directories
+        if 'codebase-qa' in rel_path:
+            return True
+        
+        # Check hierarchical .gitignore files
+        current_dir = os.path.dirname(file_path)
+        while current_dir != self.project_dir and current_dir.startswith(self.project_dir):
+            gitignore_path = os.path.join(current_dir, '.gitignore')
+            if os.path.exists(gitignore_path):
+                if self._matches_local_gitignore(file_path, gitignore_path):
+                    return True
+            current_dir = os.path.dirname(current_dir)
+        
+        # Check root .gitignore
+        root_gitignore = os.path.join(self.project_dir, '.gitignore')
+        if os.path.exists(root_gitignore):
+            if self._matches_local_gitignore(file_path, root_gitignore):
                 return True
+        
+        # Check config ignore patterns
+        config_patterns = self.project_config.get_ignore_patterns()
+        for pattern in config_patterns:
+            if self._matches_pattern(rel_path, pattern):
+                return True
+        
+        return False
+    
+    def _matches_local_gitignore(self, file_path, gitignore_path):
+        """Check if file matches patterns in a specific .gitignore file."""
+        try:
+            with open(gitignore_path, 'r') as f:
+                patterns = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            
+            # Get relative path from the directory containing this .gitignore
+            gitignore_dir = os.path.dirname(gitignore_path)
+            rel_path = os.path.relpath(file_path, gitignore_dir)
+            
+            for pattern in patterns:
+                if self._matches_pattern(rel_path, pattern):
+                    return True
+        except Exception:
+            pass
+        return False
+    
+    def _matches_pattern(self, rel_path, pattern):
+        """Check if a relative path matches a gitignore pattern."""
+        import fnmatch
+        
+        if not pattern:
+            return False
+        
+        # Handle different pattern types
+        if pattern.startswith('/'):
+            # Absolute pattern from root
+            if rel_path == pattern[1:]:
+                return True
+            # Also check if path starts with the pattern
+            if rel_path.startswith(pattern[1:] + '/'):
+                return True
+            return False
+        elif pattern.endswith('/'):
+            # Directory pattern
+            dir_pattern = pattern[:-1]
+            return rel_path.startswith(dir_pattern + '/') or rel_path == dir_pattern
+        elif pattern.startswith('**/'):
+            # Recursive pattern
+            suffix = pattern[3:]
+            if rel_path.endswith(suffix) or rel_path.endswith('/' + suffix):
+                return True
+            # Check if any part of the path contains the suffix
+            if '/' + suffix + '/' in rel_path or rel_path.startswith(suffix + '/'):
+                return True
+            # Also check if any part of the path matches the suffix
+            path_parts = rel_path.split('/')
+            for part in path_parts:
+                if fnmatch.fnmatch(part, suffix):
+                    return True
+            return False
+        elif '**' in pattern:
+            # Complex recursive pattern
+            parts = pattern.split('**')
+            if len(parts) == 2:
+                prefix, suffix = parts
+                return rel_path.startswith(prefix) and rel_path.endswith(suffix)
+        else:
+            # Simple pattern
+            return fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(os.path.basename(rel_path), pattern)
         
         return False
 
@@ -164,7 +331,7 @@ class FileHashTracker:
             self._update_git_tracking(files_processed)
         else:
             self._update_custom_tracking(files_processed)
-        log_to_sublog(self.project_config.get_logs_dir(), "file_tracking.log",
+        log_to_sublog(self.project_dir, "file_tracking.log",
                       f"Tracking info updated ({method}) for {len(files_processed)} files.")
     
     def _update_git_tracking(self, processed_files):
@@ -199,6 +366,9 @@ class FileHashTracker:
         # Save updated metadata
         with open(git_tracking_file, 'w') as f:
             json.dump(metadata, f, indent=2)
+        
+        # Save current commit for future comparison
+        self._save_current_git_commit()
     
     def _update_custom_tracking(self, processed_files):
         """Update custom hash-based tracking metadata."""
@@ -318,12 +488,13 @@ class FileHashTracker:
                 d = json.load(f)
                 return d.get("commit")
         return None
-
+    
     def _save_current_git_commit(self):
-        commit = self._get_current_git_commit()
-        if commit:
+        """Save current git commit for future comparison."""
+        current_commit = self._get_current_git_commit()
+        if current_commit:
             with open(self.git_commit_file, "w") as f:
-                json.dump({"commit": commit}, f)
+                json.dump({"commit": current_commit}, f, indent=2)
 
 # --------------- CODE CHANGE SUMMARY ---------------
 # REMOVED
