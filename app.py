@@ -11,7 +11,15 @@ from process_manager import ProcessManager
 
 # 1. Initial Setup
 st.set_page_config(page_title="Codebase-QA", layout="wide")
-logger = setup_global_logger()
+
+# Initialize logger with proper path resolution
+project_dir = st.session_state.get("project_dir", "../")
+if project_dir:
+    from logger import _get_logs_dir
+    log_dir = _get_logs_dir(project_dir)
+    logger = setup_global_logger(log_dir)
+else:
+    logger = setup_global_logger()
 
 rag_manager = RagManager()
 ui = UIComponents()
@@ -46,7 +54,7 @@ ui.render_custom_css()
 # 3. RAG Index Building
 # Check if rebuild is needed for current project type
 project_config = ProjectConfig(project_dir=project_dir, project_type=st.session_state.selected_project_type)
-should_rebuild = rag_manager.should_rebuild_index(project_dir, force_rebuild) or project_config.should_rebuild_for_project_type()
+should_rebuild = rag_manager.should_rebuild_index(project_dir, force_rebuild, st.session_state.selected_project_type)
 
 if should_rebuild:
     st.session_state.thinking_logs.clear()
@@ -64,6 +72,20 @@ if should_rebuild:
         st.error(f"❌ Error building RAG index: {e}")
         log_highlight(f"app.py: RAG index build failed: {e}")
         st.exception(e)
+else:
+    # Load existing RAG index without rebuilding
+    if not rag_manager.is_ready():
+        log_highlight("app.py: Loading existing RAG index")
+        try:
+            rag_manager.load_existing_rag_index(project_dir, ollama_model, ollama_endpoint, st.session_state.selected_project_type)
+            st.success("✅ RAG index loaded successfully!")
+            log_highlight("app.py: RAG index loaded successfully")
+        except Exception as e:
+            st.error(f"❌ Error loading RAG index: {e}")
+            log_highlight(f"app.py: RAG index load failed: {e}")
+            st.exception(e)
+    else:
+        log_highlight("app.py: RAG index already loaded")
 
 # 4. Chat Interface
 st.title(f"🗣️ Chat with your `{project_config.project_type}` codebase")
@@ -109,8 +131,12 @@ if debug_mode:
 # - render_processing_logs: Added dedicated processing logs section.
 # - Enhanced logging throughout with log_highlight for better debugging.
 # - Fixed build_rag_index call to match updated method signature.
+# - 5-click debug mode integration: Debug tools only render when debug mode is enabled.
+# - Centralized log path resolution: Fixed setup_global_logger to use proper project-specific log directory.
 # REFACTORED
 # - Chat input logic changed to support `st.form` with proper form submission handling.
 # - Added `st.rerun()` after chat response to ensure proper chat history display.
 # - Simplified RAG build process with proper error handling and logging.
 # - Better session state management and initialization.
+# - Debug tools integration: Only show debug tools when debug mode is enabled via 5-click method.
+# - Logger initialization: Now uses centralized path resolution to prevent logs in tool directory.

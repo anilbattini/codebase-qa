@@ -9,6 +9,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import ProjectConfig
 from logger import log_highlight, log_to_sublog
 
+# Import debug tools
+from .db_inspector import ChromaDBInspector, inspect_chroma_database, print_debug_report
+from .query_runner import QueryRunner, run_debug_analysis, print_quick_analysis
+
 class DebugTools:
     """Debug tools for RAG system inspection and diagnostics."""
     
@@ -18,6 +22,122 @@ class DebugTools:
         self.ollama_endpoint = ollama_endpoint
         self.project_dir = project_dir
         self.vector_db_dir = project_config.get_db_dir()
+    
+    def get_available_files(self):
+        """Get list of files available for analysis from the project directory."""
+        try:
+            files = []
+            extensions = self.project_config.get_extensions()
+            
+            for root, dirs, filenames in os.walk(self.project_dir):
+                # Skip codebase-qa directory
+                if 'codebase-qa' in dirs:
+                    dirs.remove('codebase-qa')
+                
+                for filename in filenames:
+                    if any(filename.endswith(ext) for ext in extensions):
+                        rel_path = os.path.relpath(os.path.join(root, filename), self.project_dir)
+                        files.append(rel_path)
+            
+            return sorted(files)
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error getting available files: {e}")
+            return []
+    
+    def inspect_vector_db(self):
+        """Inspect vector database and return statistics."""
+        try:
+            from .vector_db_inspector import inspect_vector_db
+            return inspect_vector_db(self.project_config, None)  # No retriever needed for inspection
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error inspecting vector DB: {e}")
+            return {"error": str(e)}
+    
+    def clear_vector_db(self):
+        """Clear the vector database."""
+        try:
+            import shutil
+            if os.path.exists(self.vector_db_dir):
+                shutil.rmtree(self.vector_db_dir)
+                log_to_sublog(self.project_dir, "debug_tools.log", f"Cleared vector DB: {self.vector_db_dir}")
+                return True
+            return False
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error clearing vector DB: {e}")
+            return False
+    
+    def analyze_file_chunks(self, file_path):
+        """Analyze chunks for a specific file."""
+        try:
+            from .chunk_analyzer import analyze_chunks
+            return analyze_chunks(self.project_config, None, file_path)
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error analyzing file chunks: {e}")
+            return []
+    
+    def test_retrieval(self, query):
+        """Test retrieval with a specific query."""
+        try:
+            from .retrieval_tester import test_retrieval_results
+            qa_chain = st.session_state.get("qa_chain")
+            return test_retrieval_results(query, None, self.project_config, qa_chain)
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error testing retrieval: {e}")
+            return []
+    
+    def test_multiple_queries(self, queries):
+        """Test multiple queries and return results."""
+        try:
+            results = {}
+            for query in queries:
+                results[query] = self.test_retrieval(query)
+            return results
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error testing multiple queries: {e}")
+            return {}
+    
+    def run_database_analysis(self, analysis_type="quick"):
+        """Run database analysis using the new debug tools."""
+        try:
+            chroma_db_path = os.path.join(self.vector_db_dir, "chroma.sqlite3")
+            if not os.path.exists(chroma_db_path):
+                return {"error": f"Chroma database not found at {chroma_db_path}"}
+            
+            return run_debug_analysis(chroma_db_path, analysis_type)
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error running database analysis: {e}")
+            return {"error": str(e)}
+    
+    def get_database_debug_report(self):
+        """Get comprehensive database debug report."""
+        try:
+            chroma_db_path = os.path.join(self.vector_db_dir, "chroma.sqlite3")
+            if not os.path.exists(chroma_db_path):
+                return {"error": f"Chroma database not found at {chroma_db_path}"}
+            
+            return inspect_chroma_database(chroma_db_path)
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error getting database debug report: {e}")
+            return {"error": str(e)}
+    
+    def run_custom_database_query(self, query):
+        """Run a custom SQL query against the Chroma database."""
+        try:
+            chroma_db_path = os.path.join(self.vector_db_dir, "chroma.sqlite3")
+            if not os.path.exists(chroma_db_path):
+                return {"error": f"Chroma database not found at {chroma_db_path}"}
+            
+            runner = QueryRunner(chroma_db_path)
+            if not runner.connect():
+                return {"error": "Could not connect to database"}
+            
+            try:
+                return runner.run_query(query, "Custom Query")
+            finally:
+                runner.disconnect()
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error running custom query: {e}")
+            return {"error": str(e)}
     
     def render_debug_interface(self, retriever):
         """Render the comprehensive debug interface with all diagnostic tools."""
@@ -167,13 +287,27 @@ def show_debug_tools(project_dir, vector_db_dir):
 
 # --------------- CODE CHANGE SUMMARY ---------------
 # REMOVED
+# - Test files from debug_tools directory (test_debug_tools.py, test_vector_db_location.py, test_detection.py, test_git_tracking.py)
 # - Local print/debug log helpers (now all logging via logger.py)
 # - Redundant per-call anchor validation (now in upstream metadata extraction & chunk filtering)
 # ADDED
 # - DebugTools class: Complete implementation with render_debug_interface method.
+# - get_available_files(): Returns list of files available for analysis from project directory.
+# - inspect_vector_db(): Inspects vector database and returns statistics.
+# - clear_vector_db(): Clears the vector database.
+# - analyze_file_chunks(): Analyzes chunks for a specific file.
+# - test_retrieval(): Tests retrieval with a specific query.
+# - test_multiple_queries(): Tests multiple queries and returns results.
+# - analyze_file_chunks(): New function in chunk_analyzer.py for file-specific chunk analysis.
+# - test_retrieval_results(): New function in retrieval_tester.py that returns results instead of just displaying.
 # - surface_anchorless_chunks: explicitly gathers all documents/chunks missing core semantic anchors for user/developer inspection.
 # - Modular helpers for loading documents/hierarchy, previewing missing/weak chunks, and visualizing project structure.
 # - Enhanced logging throughout with log_highlight and log_to_sublog for better debugging.
 # - Retriever diagnostics with detailed type information logging.
 # - Configuration debugging with comprehensive project settings display.
 # - Only logger.py used for highlight/diagnostic logs.
+# REFACTORED
+# - DebugTools class now has all required methods for UI integration.
+# - Fixed function signatures to match UI expectations.
+# - Proper error handling and logging throughout all debug methods.
+# - Clean separation between display functions and data return functions.

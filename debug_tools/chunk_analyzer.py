@@ -39,6 +39,53 @@ def analyze_chunks(project_config, retriever=None):
     except Exception as e:
         st.error(f"❌ Error analyzing chunks: {e}")
 
+def analyze_file_chunks(project_config, retriever=None, file_path=None):
+    """Analyze chunks for a specific file and return chunk data."""
+    log_highlight(f"ChunkAnalyzer.analyze_file_chunks for {file_path}")
+    
+    if not file_path:
+        return []
+    
+    try:
+        # Load hierarchical index
+        hierarchy_file = project_config.get_hierarchy_file()
+        if not os.path.exists(hierarchy_file):
+            return []
+        
+        with open(hierarchy_file, 'r') as f:
+            hierarchy = json.load(f)
+        
+        # Get file-level data
+        file_level = hierarchy.get("file_level", {})
+        file_data = file_level.get(file_path, {})
+        
+        if not file_data:
+            return []
+        
+        # Extract chunk information
+        chunks = []
+        chunk_data = file_data.get("chunks", [])
+        
+        for i, chunk_info in enumerate(chunk_data):
+            chunk = {
+                "content": chunk_info.get("content", ""),
+                "metadata": {
+                    "source": file_path,
+                    "chunk_index": i,
+                    "start_line": chunk_info.get("start_line", 0),
+                    "end_line": chunk_info.get("end_line", 0),
+                    "type": chunk_info.get("type", "unknown"),
+                    "anchors": chunk_info.get("anchors", [])
+                }
+            }
+            chunks.append(chunk)
+        
+        return chunks
+        
+    except Exception as e:
+        log_to_sublog(project_config.project_dir, "debug_tools.log", f"Error analyzing file chunks for {file_path}: {e}")
+        return []
+
 def analyze_chunk_distribution(hierarchy):
     """Analyze how chunks are distributed across files."""
     st.write("**📊 Chunk Distribution Analysis**")
@@ -310,3 +357,10 @@ def analyze_retrieval_patterns(retriever, project_config):
     
     log_to_sublog(project_config.get_project_dir(), "retrieval_patterns.log", 
                   f"Retrieval pattern analysis completed for {len(query_patterns)} patterns")
+
+# --------------- CODE CHANGE SUMMARY ---------------
+# ADDED
+# - analyze_file_chunks(): New function for analyzing chunks of a specific file.
+# - Returns structured chunk data with content and metadata for UI display.
+# - Proper error handling and logging for file-specific chunk analysis.
+# - Integration with hierarchical index for detailed chunk information.

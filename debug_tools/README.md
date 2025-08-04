@@ -1,123 +1,286 @@
-# Debug Tools for RAG System
+# RAG Pipeline Debug Tools
 
-This directory contains comprehensive debugging and diagnostic tools for the RAG (Retrieval-Augmented Generation) system.
+Comprehensive debugging tools for analyzing each step of the RAG pipeline, including chunking, metadata extraction, retrieval performance, and ranking.
 
 ## 🛠️ Available Tools
 
-### 1. **Vector Database Inspector** (`vector_db_inspector.py`)
-- **Database Structure Analysis**: Shows total size, file count, and file types
-- **Critical Files Status**: Checks for essential files like `chroma.sqlite3`, `hierarchical_index.json`
-- **Retriever Diagnostics**: Analyzes retriever and vector store configuration
-- **Hierarchical Index Analysis**: Quality assessment of the index structure
-- **Retrieval Health Check**: Tests sample queries to verify system health
+### 1. Database Inspector (`db_inspector.py`)
+Comprehensive SQLite database analysis for Chroma vector database.
 
-### 2. **Chunk Analyzer** (`chunk_analyzer.py`)
-- **Chunk Distribution**: Analysis of how chunks are distributed across files
-- **Anchor Quality Assessment**: Checks semantic anchor coverage
-- **File Coverage Analysis**: Compares indexed vs expected files
-- **Retrieval Pattern Analysis**: Tests different query patterns for effectiveness
+**Features:**
+- Database overview and statistics
+- Chunking quality analysis
+- Metadata completeness analysis
+- Retrieval performance analysis
+- Semantic analysis
+- File processing statistics
 
-### 3. **Retrieval Tester** (`retrieval_tester.py`)
-- **Interactive Query Testing**: Test custom queries with detailed results
-- **Predefined Test Suites**: Ready-made tests for Android, UI, and Architecture patterns
-- **Query Comparison**: Side-by-side comparison of different query formulations
-- **Relevance Scoring**: Automatic relevance assessment of retrieved documents
+**Usage:**
+```python
+from debug_tools import ChromaDBInspector
 
-### 4. **Main Debug Interface** (`debug_tools.py`)
-- **Tabbed Interface**: Organized debug tools in easy-to-navigate tabs
-- **Legacy Tools Support**: Backwards compatibility with existing debug functions
-- **Configuration Display**: Complete system configuration overview
-
-## 🚀 How to Use
-
-### In Streamlit Application
-1. Enable "Debug Mode" in the sidebar
-2. Navigate to the debug section at the bottom of the page
-3. Use the tabbed interface to access different tools:
-   - **🗄️ Vector DB**: Database inspection and health checks
-   - **🧩 Chunks**: Chunk quality and anchor analysis
-   - **🔍 Retrieval**: Retriever diagnostics
-   - **🧪 Testing**: Interactive testing tools
-   - **⚙️ Legacy Tools**: Original debug interface
-
-### Command Line Testing
-```bash
-cd debug_tools
-python test_debug_tools.py
+# Analyze database
+inspector = ChromaDBInspector("path/to/chroma.sqlite3")
+report = inspector.generate_debug_report()
+print_debug_report(report)
 ```
 
-## 🔧 Process Protection
+### 2. Query Runner (`query_runner.py`)
+Executes specific debug queries and provides formatted output.
 
-The debug tools include process protection to prevent UI interference during critical operations:
+**Features:**
+- Quick analysis for common issues
+- Specific debugging for chunking, metadata, retrieval, performance
+- Custom query execution
+- Formatted output
 
-- **UI Lock**: Debug mode changes are disabled during RAG building
-- **Safe State Management**: Maintains safe UI state during processes
-- **Build Status Display**: Real-time build progress monitoring
-- **Emergency Stop**: Option to safely halt long-running processes
+**Usage:**
+```python
+from debug_tools import run_debug_analysis, print_quick_analysis
 
-## 📊 Key Features
+# Quick analysis
+results = run_debug_analysis("path/to/chroma.sqlite3", "quick")
+print_quick_analysis(results)
 
-### Vector Database Diagnostics
-- **Size Analysis**: Total database size and file distribution
-- **Quality Metrics**: Anchor coverage, file coverage, retrieval health
-- **Performance Insights**: Vector count, collection statistics
+# Specific analysis
+results = run_debug_analysis("path/to/chroma.sqlite3", "chunking")
+```
 
-### Chunk Quality Assessment
-- **Semantic Anchors**: Analysis of class names, function names, screen names
-- **Content Distribution**: Chunk counts per file type
-- **Missing Anchors**: Identification of files with poor semantic structure
+### 3. SQL Query Collection (`rag_debug_queries.sql`)
+Comprehensive collection of SQL queries for debugging each step.
 
-### Retrieval Testing
-- **Test Suites**: Predefined tests for different project types
-- **Custom Queries**: Interactive testing with detailed feedback
-- **Comparison Tools**: Side-by-side query analysis
-- **Performance Metrics**: Success rates, relevance scores, anchor coverage
+**Categories:**
+1. **Database Overview Queries** - Basic database information
+2. **Chunking Quality Analysis** - Chunk length distribution, file-level analysis
+3. **Metadata Quality Analysis** - Metadata completeness, semantic anchors
+4. **Semantic Analysis** - Business logic, UI elements, dependencies
+5. **Retrieval Performance Analysis** - Embedding statistics, distance distribution
+6. **File Processing Statistics** - File extensions, top files by chunk count
+7. **Debugging Specific Issues** - Missing metadata, very short/long chunks
+8. **Performance Analysis** - Database size, index analysis
+9. **Custom Debug Queries** - Pattern matching, duplicate detection
+10. **Export Queries** - For external analysis
 
-## 🐛 Troubleshooting
+## 🔍 Debug Categories
 
-### Common Issues
+### 1. Chunking Quality Analysis
+**Issues to detect:**
+- Very short chunks (<50 chars) - may indicate poor chunking
+- Very long chunks (>3000 chars) - may be too large for effective retrieval
+- Uneven chunk distribution across files
+- Missing chunk types
 
-1. **Import Errors**
-   - Ensure you're running from the correct directory
-   - Check that all dependencies are installed
+**Key queries:**
+```sql
+-- Chunk length distribution
+SELECT 
+    CASE 
+        WHEN LENGTH(content) < 100 THEN 'Very Short (<100)'
+        WHEN LENGTH(content) < 500 THEN 'Short (100-500)'
+        WHEN LENGTH(content) < 1000 THEN 'Medium (500-1000)'
+        WHEN LENGTH(content) < 2000 THEN 'Long (1000-2000)'
+        ELSE 'Very Long (>2000)'
+    END as length_category,
+    COUNT(*) as chunk_count
+FROM embeddings
+GROUP BY length_category
+ORDER BY chunk_count DESC;
 
-2. **Database Not Found**
-   - Verify the project directory is correctly set
-   - Check if RAG index has been built for the current project type
+-- File-level chunk distribution
+SELECT 
+    metadata->>'$.source' as file_path,
+    COUNT(*) as chunk_count,
+    AVG(LENGTH(content)) as avg_chunk_length
+FROM embeddings
+GROUP BY metadata->>'$.source'
+ORDER BY chunk_count DESC
+LIMIT 10;
+```
 
-3. **Poor Retrieval Quality**
-   - Use the Chunk Analyzer to check anchor quality
-   - Run the Retrieval Health Check to identify issues
-   - Consider rebuilding the index if many files lack anchors
+### 2. Metadata Quality Analysis
+**Issues to detect:**
+- Missing semantic anchors
+- Incomplete metadata fields
+- Poor class/function extraction
+- Missing business logic indicators
 
-### Performance Tips
+**Key queries:**
+```sql
+-- Metadata completeness
+SELECT 
+    COUNT(*) as total_chunks,
+    SUM(CASE WHEN metadata->>'$.has_semantic_anchors' = 'true' THEN 1 ELSE 0 END) as chunks_with_anchors,
+    SUM(CASE WHEN metadata->>'$.class_names' IS NOT NULL THEN 1 ELSE 0 END) as chunks_with_class_names,
+    SUM(CASE WHEN metadata->>'$.function_names' IS NOT NULL THEN 1 ELSE 0 END) as chunks_with_function_names
+FROM embeddings;
 
-- Use the Vector DB Inspector to check database size and structure
-- Monitor chunk distribution to ensure balanced indexing
-- Regular retrieval testing helps maintain quality over time
+-- Find chunks without semantic anchors
+SELECT 
+    id,
+    metadata->>'$.source' as source,
+    metadata->>'$.type' as chunk_type,
+    LENGTH(content) as content_length
+FROM embeddings
+WHERE metadata->>'$.has_semantic_anchors' = 'false'
+ORDER BY LENGTH(content) DESC
+LIMIT 10;
+```
+
+### 3. Retrieval Performance Analysis
+**Issues to detect:**
+- Embedding size inconsistencies
+- Distance distribution problems
+- Poor retrieval quality
+
+**Key queries:**
+```sql
+-- Embedding statistics
+SELECT 
+    COUNT(*) as total_embeddings,
+    AVG(LENGTH(embedding)) as avg_embedding_size,
+    MIN(LENGTH(embedding)) as min_embedding_size,
+    MAX(LENGTH(embedding)) as max_embedding_size
+FROM embeddings;
+
+-- Sample embeddings for analysis
+SELECT 
+    id,
+    metadata->>'$.source' as source,
+    LENGTH(embedding) as embedding_size,
+    metadata->>'$.type' as chunk_type
+FROM embeddings
+ORDER BY RANDOM()
+LIMIT 10;
+```
+
+### 4. File Processing Statistics
+**Issues to detect:**
+- Uneven file processing
+- Missing file types
+- Processing errors
+
+**Key queries:**
+```sql
+-- File extension distribution
+SELECT 
+    SUBSTR(metadata->>'$.source', -4) as file_extension,
+    COUNT(*) as chunk_count,
+    COUNT(DISTINCT metadata->>'$.source') as file_count
+FROM embeddings
+WHERE metadata->>'$.source' IS NOT NULL
+GROUP BY SUBSTR(metadata->>'$.source', -4)
+ORDER BY chunk_count DESC;
+
+-- Top files by chunk count
+SELECT 
+    metadata->>'$.source' as file_path,
+    COUNT(*) as chunk_count,
+    AVG(LENGTH(content)) as avg_chunk_length
+FROM embeddings
+WHERE metadata->>'$.source' IS NOT NULL
+GROUP BY metadata->>'$.source'
+ORDER BY chunk_count DESC
+LIMIT 15;
+```
+
+## 🚀 Usage Examples
+
+### Quick Analysis
+```bash
+# Run quick analysis
+python debug_tools/query_runner.py path/to/chroma.sqlite3 quick
+
+# Run specific analysis
+python debug_tools/query_runner.py path/to/chroma.sqlite3 chunking
+python debug_tools/query_runner.py path/to/chroma.sqlite3 metadata
+python debug_tools/query_runner.py path/to/chroma.sqlite3 retrieval
+python debug_tools/query_runner.py path/to/chroma.sqlite3 performance
+```
+
+### Database Inspector
+```bash
+# Run comprehensive analysis
+python debug_tools/db_inspector.py path/to/chroma.sqlite3
+```
+
+### Custom Queries
+```python
+from debug_tools import QueryRunner
+
+runner = QueryRunner("path/to/chroma.sqlite3")
+results = runner.run_custom_query("""
+    SELECT 
+        metadata->>'$.source' as file,
+        COUNT(*) as chunks,
+        AVG(LENGTH(content)) as avg_length
+    FROM embeddings
+    WHERE metadata->>'$.source' LIKE '%.kt'
+    GROUP BY metadata->>'$.source'
+    ORDER BY chunks DESC
+    LIMIT 10;
+""")
+print(results)
+```
+
+## 🔧 Integration with UI
+
+The debug tools are integrated into the Streamlit UI when debug mode is enabled:
+
+1. **Enable debug mode**: Click the app title 5 times
+2. **Access debug tools**: Check "Debug Mode" in the sidebar
+3. **Use debug tabs**: 
+   - Vector DB Inspector
+   - Chunk Analyzer
+   - Retrieval Tester
+   - Build Status
+   - Logs Viewer
+
+## 📊 Expected Results
+
+### Good Chunking Quality
+- **Chunk lengths**: Most chunks between 100-2000 characters
+- **Distribution**: Even distribution across files
+- **Types**: Mix of class, function, import, and other chunks
+
+### Good Metadata Quality
+- **Semantic anchors**: >80% of chunks have semantic anchors
+- **Class names**: >70% of chunks have class names
+- **Function names**: >60% of chunks have function names
+- **Business logic**: >50% of chunks have business logic indicators
+
+### Good Retrieval Performance
+- **Embedding consistency**: All embeddings have similar sizes
+- **Distance distribution**: Reasonable distance spread
+- **File coverage**: All relevant files processed
+
+## 🐛 Common Issues and Solutions
+
+### Issue: Very Short Chunks
+**Cause**: Poor chunking configuration
+**Solution**: Adjust chunk size parameters in chunker configuration
+
+### Issue: Missing Semantic Anchors
+**Cause**: Poor metadata extraction
+**Solution**: Improve regex patterns for class/function detection
+
+### Issue: Uneven File Processing
+**Cause**: Gitignore not working properly
+**Solution**: Check gitignore patterns and file filtering
+
+### Issue: Poor Retrieval Quality
+**Cause**: Embedding issues or poor chunking
+**Solution**: Check embedding model and chunk quality
 
 ## 📝 Logging
 
-All debug tools log their activities to project-specific log files:
-- `vector_db_inspection.log`: Database analysis results
-- `chunk_analysis.log`: Chunk quality assessments
-- `retrieval_testing.log`: Query test results
-- `process_manager.log`: Process state changes
+All debug operations are logged to `debug_tools.log` in the project logs directory for troubleshooting.
 
-Logs are stored in `codebase-qa_db_{project_type}/logs/` directory.
+## 🔗 Related Files
 
-## 🔄 Integration
-
-The debug tools are fully integrated with the main RAG system:
-- **Project Type Aware**: Automatically adapts to Android, Python, iOS, etc.
-- **Session State Integration**: Works with Streamlit session management
-- **Process Protection**: Prevents interference with RAG building
-- **Real-time Updates**: Live monitoring of system state
-
-## 🎯 Best Practices
-
-1. **Regular Health Checks**: Run diagnostics after major changes
-2. **Monitor Anchor Quality**: Maintain >80% anchor coverage for best results
-3. **Test Retrieval Patterns**: Verify different query types work well
-4. **Process Protection**: Always use debug tools safely during builds
-5. **Log Analysis**: Review logs to identify recurring issues
+- `rag_debug_queries.sql` - Complete SQL query collection
+- `db_inspector.py` - Database analysis tools
+- `query_runner.py` - Query execution tools
+- `debug_tools.py` - Main debug interface
+- `vector_db_inspector.py` - Vector database inspection
+- `chunk_analyzer.py` - Chunk analysis tools
+- `retrieval_tester.py` - Retrieval testing tools

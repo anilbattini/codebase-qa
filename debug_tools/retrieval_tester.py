@@ -161,11 +161,48 @@ def test_single_query(query: str, retriever, k: int, project_config, qa_chain=No
                 st.error(f"❌ QA chain error: {e}")
         
         # Log the test
-        log_to_sublog(project_config.get_project_dir(), "retrieval_testing.log", 
+        log_to_sublog(project_config.project_dir, "retrieval_testing.log", 
                       f"Query tested: '{query}' -> {len(docs)} docs retrieved")
         
     except Exception as e:
         st.error(f"❌ Error testing query: {e}")
+        log_to_sublog(project_config.project_dir, "retrieval_testing.log", f"Error testing query '{query}': {e}")
+
+def test_retrieval_results(query: str, retriever, project_config, qa_chain=None):
+    """Test a single query and return results as a list of dictionaries."""
+    try:
+        if not retriever:
+            return []
+        
+        # Retrieve documents
+        docs = retriever.get_relevant_documents(query, k=5)
+        
+        if not docs:
+            return []
+        
+        # Convert to list of dictionaries
+        results = []
+        for doc in docs:
+            result = {
+                "content": doc.page_content,
+                "source": doc.metadata.get('source', 'Unknown'),
+                "score": doc.metadata.get('score', 0.0),
+                "metadata": doc.metadata
+            }
+            results.append(result)
+        
+        return results
+        
+    except Exception as e:
+        log_to_sublog(project_config.project_dir, "debug_tools.log", f"Error testing retrieval for query '{query}': {e}")
+        return []
+
+# --------------- CODE CHANGE SUMMARY ---------------
+# ADDED
+# - test_retrieval_results(): New function that returns results as list of dictionaries.
+# - Structured return format with content, source, score, and metadata.
+# - Proper error handling and logging for retrieval testing.
+# - Integration with UI components for result display.
 
 def run_test_suite(queries: List[str], retriever, project_config, qa_chain=None):
     """Run a predefined test suite and show summary results."""
