@@ -53,7 +53,7 @@ def log_to_sublog(project_dir, subname, msg):
 def _get_logs_dir(project_dir):
     """Internal helper to resolve logs directory consistently."""
     if not project_dir:
-        project_dir = "../"
+        project_dir = "../../"
     
     # Convert to absolute path
     abs_project_dir = os.path.abspath(project_dir)

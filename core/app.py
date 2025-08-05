@@ -13,7 +13,7 @@ from process_manager import ProcessManager
 st.set_page_config(page_title="Codebase-QA", layout="wide")
 
 # Initialize logger with proper path resolution
-project_dir = st.session_state.get("project_dir", "../")
+project_dir = st.session_state.get("project_dir", "../../")
 if project_dir:
     from logger import _get_logs_dir
     log_dir = _get_logs_dir(project_dir)
