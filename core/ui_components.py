@@ -26,7 +26,7 @@ class UIComponents:
                        ProcessManager.safe_debug_mode_check())
             
             # Get current project directory
-            current_project_dir = st.session_state.get("project_dir", "../../")
+            current_project_dir = st.session_state.get("project_dir", "../")
             project_dir = st.text_input("📁 Project Directory", value=current_project_dir)
             
             # Check if project directory has changed
@@ -104,7 +104,7 @@ class UIComponents:
     def _render_project_type_change_dialog(self, project_types):
         """Render the dialog for changing an already selected project type."""
         current_type = st.session_state.selected_project_type
-        project_dir = st.session_state.get("project_dir", "../../")
+        project_dir = st.session_state.get("project_dir", "../")
         
         # Check if current project type has existing database
         current_config = ProjectConfig(project_dir=os.path.abspath(project_dir), project_type=current_type)
@@ -149,7 +149,7 @@ class UIComponents:
     def _handle_project_type_change(self, new_type):
         """Handle project type change, including backing up existing data."""
         log_highlight("UIComponents._handle_project_type_change")
-        project_dir = st.session_state.get("project_dir", "../../")
+        project_dir = st.session_state.get("project_dir", "../")
         
         if project_dir:
             current_type = st.session_state.selected_project_type
