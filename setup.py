@@ -48,7 +48,7 @@ setup(
     },
     include_package_data=True,
     package_data={
-        "codebase_qa": ["*.py", "debug_tools/*.py", "debug_tools/*.md"],
+        "codebase_qa": ["*.py", "core/*.py", "debug_tools/*.py", "debug_tools/*.md"],
     },
     keywords="rag, codebase, qa, streamlit, langchain, ollama",
     project_urls={

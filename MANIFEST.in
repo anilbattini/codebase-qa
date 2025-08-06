@@ -5,6 +5,7 @@ include pyproject.toml
 include setup.py
 
 recursive-include codebase_qa *.py
+recursive-include codebase_qa core *.py
 recursive-include codebase_qa debug_tools *.py
 recursive-include codebase_qa debug_tools *.md
 

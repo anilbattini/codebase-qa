@@ -95,7 +95,7 @@ def run_streamlit(args):
     
     # Build the streamlit command
     cmd = [
-        sys.executable, "-m", "streamlit", "run", "app.py",
+        sys.executable, "-m", "streamlit", "run", "core/app.py",
         "--server.port", str(args.port),
         "--server.address", args.host
     ]

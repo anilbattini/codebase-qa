@@ -43,8 +43,6 @@ dev = [
     "flake8>=6.0.0",
 ]
 
-[project.scripts]
-codebase-qa = "codebase_qa.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/codebase-qa/codebase-qa"
@@ -53,7 +51,11 @@ Documentation = "https://github.com/codebase-qa/codebase-qa#readme"
 Issues = "https://github.com/codebase-qa/codebase-qa/issues"
 
 [tool.setuptools.packages.find]
-include = ["codebase_qa*"]
+include = ["core*", "debug_tools*"]
+
+[project.scripts]
+codebase-qa = "codebase_qa.cli:main"
+
 
 [tool.setuptools.package-data]
-codebase_qa = ["*.py", "debug_tools/*.py", "debug_tools/*.md"] 
+codebase_qa = ["*.py", "core/*.py", "debug_tools/*.py", "debug_tools/*.md"] 
