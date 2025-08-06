@@ -4,6 +4,7 @@ import streamlit as st
 import os
 import shutil
 from config import ProjectConfig
+from model_config import model_config
 from logger import log_highlight, log_to_sublog
 from process_manager import ProcessManager
 
@@ -19,6 +20,7 @@ class UIComponents:
             if ProcessManager.disable_ui_during_build():
                 # Return safe state during build
                 safe_state = ProcessManager.get_safe_ui_state()
+                log_to_sublog(safe_state["project_dir"], "ui_components.log", "🔄 UI disabled during RAG build")
                 return (safe_state["project_dir"], 
                        safe_state["ollama_model"], 
                        safe_state["ollama_endpoint"], 
@@ -28,6 +30,10 @@ class UIComponents:
             # Get current project directory
             current_project_dir = st.session_state.get("project_dir", "../")
             project_dir = st.text_input("📁 Project Directory", value=current_project_dir)
+            
+            # Log project directory changes
+            if project_dir and project_dir != current_project_dir:
+                log_to_sublog(project_dir, "ui_components.log", f"📁 Project directory changed: {current_project_dir} -> {project_dir}")
             
             # Check if project directory has changed
             if project_dir and project_dir != current_project_dir:
@@ -41,17 +47,21 @@ class UIComponents:
                     
                     col1, col2 = st.columns(2)
                     if col1.button("✅ Confirm Change"):
+                        log_to_sublog(project_dir, "ui_components.log", "✅ User confirmed project directory change")
                         # Clear existing data
                         import shutil
                         if os.path.exists(project_config.get_db_dir()):
                             shutil.rmtree(project_config.get_db_dir())
+                            log_to_sublog(project_dir, "ui_components.log", f"🗑️ Deleted existing database: {project_config.get_db_dir()}")
                         st.success("🗑️ Cleared existing data. New directory will be used.")
                         st.session_state["project_dir"] = project_dir
                         st.rerun()
                     if col2.button("❌ Cancel"):
+                        log_to_sublog(project_dir, "ui_components.log", "❌ User cancelled project directory change")
                         st.rerun()
                 else:
                     st.session_state["project_dir"] = project_dir
+                    log_to_sublog(project_dir, "ui_components.log", f"📁 Project directory updated: {project_dir}")
             
             # Resolve the absolute path to ensure vector_db is created in the source project directory
             if project_dir:
@@ -66,8 +76,20 @@ class UIComponents:
             if ProcessManager.safe_project_type_change():
                 self._render_project_type_selector(project_types)
             
-            ollama_model = st.text_input("🧠 Ollama Model", value=st.session_state.get("ollama_model", "llama3.1"))
-            ollama_endpoint = st.text_input("🔗 Ollama Endpoint", value=st.session_state.get("ollama_endpoint", "http://127.0.0.1:11434"))
+            ollama_model = st.text_input("🧠 Ollama Model", value=st.session_state.get("ollama_model", model_config.get_ollama_model()))
+            ollama_endpoint = st.text_input("🔗 Ollama Endpoint", value=st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint()))
+            
+            # Log configuration changes
+            current_model = st.session_state.get("ollama_model", model_config.get_ollama_model())
+            current_endpoint = st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint())
+            
+            if ollama_model != current_model:
+                log_to_sublog(project_dir, "ui_components.log", f"🧠 Ollama model changed: {current_model} -> {ollama_model}")
+                st.session_state["ollama_model"] = ollama_model
+            
+            if ollama_endpoint != current_endpoint:
+                log_to_sublog(project_dir, "ui_components.log", f"🔗 Ollama endpoint changed: {current_endpoint} -> {ollama_endpoint}")
+                st.session_state["ollama_endpoint"] = ollama_endpoint
 
             # Use safe force rebuild check
             force_rebuild = ProcessManager.safe_force_rebuild_check()
@@ -85,6 +107,21 @@ class UIComponents:
     
     def render_build_status(self):
         """Render build status if RAG building is in progress."""
+        # Check for timeout
+        is_timeout, elapsed = ProcessManager.check_rag_build_timeout()
+        if is_timeout:
+            st.error(f"❌ RAG building has been running for {elapsed/60:.1f} minutes and may be stuck!")
+            st.warning("The embedding computation may be hanging. Consider:")
+            st.write("1. Check if Ollama is running and responsive")
+            st.write("2. Try a smaller model or fewer documents")
+            st.write("3. Restart the application")
+            
+            if st.button("🛑 Force Stop RAG Build"):
+                ProcessManager.finish_rag_build()
+                st.session_state["force_stop"] = True
+                st.rerun()
+            return
+        
         ProcessManager.render_build_status()
 
     def _render_project_type_selector(self, project_types):
@@ -245,12 +282,12 @@ class UIComponents:
         </style>
         """, unsafe_allow_html=True)
 
-    def render_chat_input(self, project_config):
+    def render_chat_input(self):
         """Render chat input form, restored from the original version."""
         with st.form("query_form", clear_on_submit=True):
             query = st.text_input(
                 "📝 Your question",
-                placeholder=f"What does the {project_config.project_type} project do?",
+                placeholder="What does the project do?",
                 key="query_input",
                 disabled=not st.session_state.get("qa_chain")
             )
@@ -299,18 +336,26 @@ class UIComponents:
             ])
             
             try:
-                from debug_tools import DebugTools
-                debug_tools = DebugTools(project_config=project_config, ollama_model=ollama_model, 
+                import sys
+                import os
+                # Add debug_tools directory to path
+                debug_tools_path = os.path.join(os.path.dirname(__file__), '..', 'debug_tools')
+                if debug_tools_path not in sys.path:
+                    sys.path.append(debug_tools_path)
+                
+                # Import directly from the debug_tools.py file to avoid relative import issues
+                import debug_tools
+                debug_tools_instance = debug_tools.DebugTools(project_config=project_config, ollama_model=ollama_model, 
                                          ollama_endpoint=ollama_endpoint, project_dir=project_dir)
                 
                 with tab1:
-                    self._render_vector_db_inspector(debug_tools)
+                    self._render_vector_db_inspector(debug_tools_instance)
                 
                 with tab2:
-                    self._render_chunk_analyzer(debug_tools)
+                    self._render_chunk_analyzer(debug_tools_instance)
                 
                 with tab3:
-                    self._render_retrieval_tester(debug_tools)
+                    self._render_retrieval_tester(debug_tools_instance)
                 
                 with tab4:
                     self._render_build_status(project_config)
@@ -410,13 +455,20 @@ class UIComponents:
                     try:
                         results = debug_tools.test_retrieval(test_query)
                         
-                        st.subheader("🔍 Retrieval Results")
-                        st.write(f"Found {len(results)} relevant documents")
-                        
-                        for i, result in enumerate(results):
-                            with st.expander(f"Result {i+1} (Score: {result.get('score', 0):.3f})"):
-                                st.write(f"**Source:** {result.get('source', 'Unknown')}")
-                                st.code(result.get('content', ''), language='text')
+                        if isinstance(results, list):
+                            st.subheader("🔍 Retrieval Results")
+                            st.write(f"Found {len(results)} relevant documents")
+                            
+                            for i, result in enumerate(results):
+                                with st.expander(f"Result {i+1} (Score: {result.get('relevance_score', 'N/A')})"):
+                                    st.write(f"**Source:** {result.get('source', 'Unknown')}")
+                                    st.code(result.get('content', ''), language='text')
+                                    st.write("**Metadata:**")
+                                    st.json(result.get('metadata', {}))
+                        elif isinstance(results, dict) and "error" in results:
+                            st.error(f"❌ Retrieval failed: {results['error']}")
+                        else:
+                            st.warning(f"⚠️ Unexpected result format: {type(results)}")
                                 
                     except Exception as e:
                         st.error(f"❌ Error testing retrieval: {e}")
@@ -437,9 +489,14 @@ class UIComponents:
                         st.subheader("📊 Multiple Query Results")
                         for query, result in results.items():
                             with st.expander(f"Query: {query}"):
-                                st.write(f"Documents found: {len(result)}")
-                                for doc in result[:3]:  # Show top 3
-                                    st.write(f"- {doc.get('source', 'Unknown')} (Score: {doc.get('score', 0):.3f})")
+                                if isinstance(result, list):
+                                    st.write(f"Documents found: {len(result)}")
+                                    for doc in result[:3]:  # Show top 3
+                                        st.write(f"- {doc.get('source', 'Unknown')} (Score: {doc.get('relevance_score', 'N/A')})")
+                                elif isinstance(result, dict) and "error" in result:
+                                    st.error(f"Error: {result['error']}")
+                                else:
+                                    st.warning(f"Unexpected result format: {type(result)}")
                                     
                     except Exception as e:
                         st.error(f"❌ Error testing multiple queries: {e}")
