@@ -81,23 +81,67 @@ class ContextBuilder:
         # Fallback: retrieved document chunks
         if not found_strong_context and retrieved_docs:
             context_parts.append("\n## 🔍 Retrieved Code Chunks (Similarity)\n")
-            for i, doc in enumerate(retrieved_docs):
+            
+            # Sort documents by relevance (strong anchors first, then by semantic score)
+            sorted_docs = []
+            weak_docs = []
+            
+            for doc in retrieved_docs:
+                if hasattr(doc, 'metadata') and isinstance(doc.metadata, dict):
+                    anchors = [doc.metadata.get(k) for k in ("screen_name", "class_names", "function_names", "component_name")]
+                    semantic_score = doc.metadata.get("semantic_score", 0.0)
+                    
+                    if any(anchors):
+                        # Add semantic score to prioritize better chunks
+                        doc.metadata["_sort_score"] = semantic_score + 10.0  # Boost for anchors
+                        sorted_docs.append(doc)
+                    else:
+                        doc.metadata["_sort_score"] = semantic_score
+                        weak_docs.append(doc)
+                else:
+                    weak_docs.append(doc)
+            
+            # Sort by semantic score within each category
+            sorted_docs.sort(key=lambda x: x.metadata.get("_sort_score", 0.0), reverse=True)
+            weak_docs.sort(key=lambda x: x.metadata.get("_sort_score", 0.0), reverse=True)
+            
+            # Use strong anchors first, then weak ones if needed
+            docs_to_use = sorted_docs + weak_docs
+            
+            for i, doc in enumerate(docs_to_use):
                 if token_count > self.max_tokens * 0.8:
                     context_parts.append(f"...[Context window limit: {token_count} tokens]...")
                     break
-                # Prefer chunks with at least one anchor
-                anchors = [doc.metadata.get(k) for k in ("screen_name", "class_names", "function_names", "component_name")]
-                if any(anchors):
-                    formatted = self._format_document_with_enhanced_context(doc, intent)
-                    context_parts.append(formatted)
-                    token_count += len(formatted.split())
+                
+                if hasattr(doc, 'metadata') and isinstance(doc.metadata, dict):
+                    anchors = [doc.metadata.get(k) for k in ("screen_name", "class_names", "function_names", "component_name")]
+                    semantic_score = doc.metadata.get("semantic_score", 0.0)
+                    
+                    if any(anchors):
+                        formatted = self._format_document_with_enhanced_context(doc, intent)
+                        context_parts.append(formatted)
+                        token_count += len(formatted.split())
+                    else:
+                        # Only include weak chunks if we have no strong ones, and only high semantic score
+                        if not sorted_docs and semantic_score > 2.0:
+                            formatted = self._format_document_with_enhanced_context(doc, intent)
+                            context_parts.append(formatted)
+                            token_count += len(formatted.split())
+                            log_to_sublog(self.project_dir, "context_building.log",
+                                f"⚠️ Weak/anchorless chunk served as fallback, doc={doc.metadata.get('source', '?')}, score={semantic_score}"
+                            )
                 else:
-                    # Weak anchor: log, only include if no strong chunks
+                    # Handle case where doc is not a proper Document object
                     log_to_sublog(self.project_dir, "context_building.log",
-                        f"⚠️ Weak/anchorless chunk served as fallback, doc={doc.metadata.get('source', '?')}"
+                        f"⚠️ Invalid document object type: {type(doc)}"
                     )
-            if not any([doc.metadata.get(k) for doc in ("screen_name", "class_names", "function_names", "component_name")] for doc in retrieved_docs):
+            
+            # Check if we found any strong semantic anchors
+            if not sorted_docs and weak_docs:
                 context_parts.append("\n⚠️ No context blocks with strong semantic anchors found. Results may be less relevant.\n")
+            elif sorted_docs:
+                avg_score = sum(d.metadata.get("semantic_score", 0.0) for d in sorted_docs) / len(sorted_docs)
+                context_parts.append(f"\n✅ Found {len(sorted_docs)} chunks with strong semantic anchors (avg score: {avg_score:.1f})\n")
 
         # Log context details
         sublog_msg += "".join(context_parts[:2]) + "...\n"
