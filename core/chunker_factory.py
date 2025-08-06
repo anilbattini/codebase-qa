@@ -56,11 +56,11 @@ class SemanticChunker:
         indices = sorted(set(indices))
         indices.append(len(content))
         chunks = []
-        # Assemble semantic-whole chunks
+        # Assemble semantic-whole chunks with larger size for better context
         for idx, start in enumerate(indices[:-1]):
             end = indices[idx+1]
             chunk_str = content[start:end].strip()
-            if chunk_str and len(chunk_str) > 40:
+            if chunk_str and len(chunk_str) > 100:  # Increased minimum size
                 meta = {
                     "content": chunk_str,
                     "type": self._detect_chunk_type(chunk_str, file_ext),
@@ -68,12 +68,44 @@ class SemanticChunker:
                     "class_names": self._extract_class_names(chunk_str, file_ext),
                     "function_names": self._extract_function_names(chunk_str, file_ext),
                     "has_prev_context": False,
-                    "has_next_context": False
+                    "has_next_context": False,
+                    "chunk_size": len(chunk_str),
+                    "semantic_score": self._calculate_semantic_score(chunk_str, file_ext)
                 }
                 chunks.append(meta)
         if not chunks:
             return self._chunk_generic_content(content)
         return chunks
+
+    def _calculate_semantic_score(self, chunk: str, file_ext: str) -> float:
+        """Calculate semantic richness score for a chunk."""
+        score = 0.0
+        
+        # Higher score for chunks with class/function definitions
+        if re.search(r'\bclass\s+\w+', chunk):
+            score += 2.0
+        if re.search(r'\bfun\s+\w+', chunk) or re.search(r'\bdef\s+\w+', chunk):
+            score += 1.5
+            
+        # Higher score for chunks with imports/dependencies
+        if re.search(r'\bimport\s+', chunk) or re.search(r'\bfrom\s+', chunk):
+            score += 1.0
+            
+        # Higher score for chunks with configuration/setup
+        if re.search(r'\bconfig\b', chunk, re.IGNORECASE) or re.search(r'\bsetup\b', chunk, re.IGNORECASE):
+            score += 1.0
+            
+        # Higher score for chunks with UI elements
+        if re.search(r'\bButton\b|\bTextView\b|\bRecyclerView\b|\bFragment\b', chunk):
+            score += 1.5
+            
+        # Higher score for longer, more detailed chunks
+        if len(chunk) > 500:
+            score += 0.5
+        if len(chunk) > 1000:
+            score += 0.5
+            
+        return score
 
     def _chunk_generic_content(self, content: str) -> List[Dict[str, Any]]:
         splitter = RecursiveCharacterTextSplitter(
