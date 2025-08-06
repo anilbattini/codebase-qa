@@ -13,11 +13,11 @@ from langchain_ollama import OllamaEmbeddings
 from chunker_factory import get_chunker, summarize_chunk
 from git_hash_tracker import FileHashTracker
 from config import ProjectConfig
+from model_config import model_config
 from metadata_extractor import MetadataExtractor
 from hierarchical_indexer import HierarchicalIndexer
 
 from logger import setup_global_logger, log_to_sublog, log_highlight
-from config import ProjectConfig
 
 def chunk_fingerprint(chunk: str) -> str:
     import hashlib
@@ -65,6 +65,46 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     
     # All metadata, relationships, and vector DB will be in the configured directory
     VECTOR_DB_DIR = project_config.get_db_dir()
+    
+    # Ensure clean database directory for rebuild
+    if os.path.exists(VECTOR_DB_DIR):
+        try:
+            # Try to remove any existing database files that might be locked
+            import shutil
+            import time
+            
+            # Check for common Chroma database files
+            chroma_files = [
+                os.path.join(VECTOR_DB_DIR, "chroma.sqlite3"),
+                os.path.join(VECTOR_DB_DIR, "chroma.sqlite3-shm"),
+                os.path.join(VECTOR_DB_DIR, "chroma.sqlite3-wal")
+            ]
+            
+            for file_path in chroma_files:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        log_to_sublog(project_dir, "build_rag.log", f"Removed existing database file: {file_path}")
+                    except PermissionError:
+                        # File might be locked, try again after a short delay
+                        time.sleep(0.5)
+                        try:
+                            os.remove(file_path)
+                            log_to_sublog(project_dir, "build_rag.log", f"Removed locked database file: {file_path}")
+                        except Exception as e:
+                            log_to_sublog(project_dir, "build_rag.log", f"Could not remove database file {file_path}: {e}")
+            
+            # If the directory is empty or only contains non-database files, we can proceed
+            remaining_files = [f for f in os.listdir(VECTOR_DB_DIR) if f not in ['chroma.sqlite3', 'chroma.sqlite3-shm', 'chroma.sqlite3-wal']]
+            if not remaining_files:
+                # Directory is effectively empty, safe to proceed
+                log_to_sublog(project_dir, "build_rag.log", f"Database directory cleaned: {VECTOR_DB_DIR}")
+            else:
+                log_to_sublog(project_dir, "build_rag.log", f"Database directory contains other files: {remaining_files}")
+                
+        except Exception as e:
+            log_to_sublog(project_dir, "build_rag.log", f"Warning: Could not clean database directory: {e}")
+    
     project_config.create_directories()
     
     # Setup logger inside the logs directory
@@ -84,7 +124,33 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     # File tracking/hash check
     hash_tracker = FileHashTracker(project_dir, project_config.get_db_dir())
     files_to_process = hash_tracker.get_changed_files(extensions)
-    embeddings = OllamaEmbeddings(model=ollama_model, base_url=ollama_endpoint)
+    
+    # Use centralized model configuration
+    embedding_model = model_config.get_embedding_model()
+    ollama_endpoint = model_config.get_ollama_endpoint()
+    
+    # Check if the dedicated embedding model is available, fallback to original model
+    try:
+        import requests
+        response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
+        if response.status_code == 200:
+            available_models = response.json().get("models", [])
+            model_names = [model.get("name", "") for model in available_models]
+            
+            if embedding_model in model_names:
+                st.info(f"🚀 Using dedicated embedding model: {embedding_model}")
+                log_to_sublog(project_dir, "rag_manager.log", f"Using dedicated embedding model: {embedding_model}")
+            else:
+                st.warning(f"⚠️ Dedicated embedding model '{embedding_model}' not found, using LLM model for embeddings (slower)")
+                log_to_sublog(project_dir, "rag_manager.log", f"Dedicated embedding model not found, using LLM model: {ollama_model}")
+                embedding_model = ollama_model
+    except Exception as e:
+        st.warning(f"⚠️ Could not check available models, using LLM model for embeddings: {e}")
+        log_to_sublog(project_dir, "rag_manager.log", f"Could not check models, using LLM model: {ollama_model}")
+        embedding_model = ollama_model
+    
+    embeddings = OllamaEmbeddings(model=embedding_model, base_url=ollama_endpoint)
+    
     tracking_status = hash_tracker.get_tracking_status()
     tracking_method = tracking_status['tracking_method']
 
@@ -124,12 +190,18 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     # These are your key semantic anchors, config-driven
     anchor_required_fields = ["screen_name", "class_names", "function_names", "component_name"]
 
+    st.session_state.thinking_logs.append(f"📄 Processing {len(files_to_process)} files...")
+    update_logs(log_placeholder)
+    logger.info(f"Starting processing of {len(files_to_process)} files")
+    log_to_sublog(project_dir, "rag_manager.log", f"Starting processing of {len(files_to_process)} files")
+
     for file_index, path in enumerate(files_to_process):
         ext = os.path.splitext(path)[1]
         chunker = get_chunker(ext, project_config)
         st.session_state.thinking_logs.append(f"📄 Processing ({file_index + 1}/{len(files_to_process)}): {path}")
         update_logs(log_placeholder)
         logger.info(f"Processing file: {path}")
+        log_to_sublog(project_dir, "rag_manager.log", f"Processing file ({file_index + 1}/{len(files_to_process)}): {path}")
         file_chunk_count = 0
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -161,6 +233,9 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
                     enhanced_metadata["has_semantic_anchors"] = False
                 else:
                     enhanced_metadata["has_semantic_anchors"] = True
+                    log_to_sublog(project_dir, "chunking_metadata.log",
+                        f"Chunk with semantic anchors from {path}, idx {i}. Meta {dict(enhanced_metadata)}"
+                    )
 
                 # Add to metadata
                 enhanced_metadata.update({
@@ -187,23 +262,27 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
                 f"✅ {path}: {file_chunk_count} chunks (total: {total_chunks})"
             )
             update_logs(log_placeholder)
+            log_to_sublog(project_dir, "rag_manager.log", f"Completed {path}: {file_chunk_count} chunks (total: {total_chunks})")
 
         except Exception as e:
             st.warning(f"⚠️ Failed to process {path}: {e}")
             st.session_state.thinking_logs.append(f"❌ Error with {path}: {e}")
             processing_stats["errors"] += 1
             logger.exception(f"Error with {path}: {e}")
+            log_to_sublog(project_dir, "rag_manager.log", f"Error processing {path}: {e}")
             update_logs(log_placeholder)
 
     if successfully_processed_files:
         hash_tracker.update_tracking_info(successfully_processed_files)
         st.session_state.thinking_logs.append("💾 Updated file tracking information")
         update_logs(log_placeholder)
+        log_to_sublog(project_dir, "rag_manager.log", "Updated file tracking information")
 
     # Build relationships and hierarchy
     if documents:
         st.session_state.thinking_logs.append("🔗 Building code relationships...")
         update_logs(log_placeholder)
+        log_to_sublog(project_dir, "rag_manager.log", "Building code relationships...")
         code_relationship_map = build_code_relationship_map(documents)
         
         # Normalize all paths in the relationship map for storage
@@ -218,11 +297,30 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
             json.dump(jsonable, f, indent=2)
         st.session_state.thinking_logs.append("🏗️ Creating hierarchical indexes...")
         update_logs(log_placeholder)
-        hierarchy = hierarchical_indexer.create_hierarchical_index(documents)
+        logger.info("Starting hierarchical index creation")
+        log_to_sublog(project_dir, "rag_manager.log", "Creating hierarchical indexes...")
+        
+        try:
+            hierarchy = hierarchical_indexer.create_hierarchical_index(documents)
+            st.session_state.thinking_logs.append("✅ Hierarchical indexes created successfully!")
+            update_logs(log_placeholder)
+            logger.info("Hierarchical index creation completed")
+            log_to_sublog(project_dir, "rag_manager.log", "Hierarchical indexes created successfully")
+        except Exception as e:
+            st.session_state.thinking_logs.append(f"⚠️ Warning: Hierarchical indexing failed: {e}")
+            update_logs(log_placeholder)
+            logger.warning(f"Hierarchical indexing failed: {e}")
+            log_to_sublog(project_dir, "rag_manager.log", f"Warning: Hierarchical indexing failed: {e}")
+            # Continue without hierarchical indexing
 
     # Sanitize/prepare for vectorstore
+    st.session_state.thinking_logs.append("🧹 Sanitizing documents for vector storage...")
+    update_logs(log_placeholder)
+    logger.info("Starting document sanitization")
+    log_to_sublog(project_dir, "rag_manager.log", "Sanitizing documents for vector storage...")
+    
     sanitized_docs = []
-    for doc in documents:
+    for i, doc in enumerate(documents):
         if not isinstance(doc, Document):
             continue
         if not hasattr(doc, "metadata") or not isinstance(doc.metadata, dict):
@@ -233,31 +331,131 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
             except Exception as e:
                 doc.metadata = {"source": "error_during_filtering"}
         sanitized_docs.append(doc)
+        
+        # Log progress every 10 documents
+        if (i + 1) % 10 == 0:
+            st.session_state.thinking_logs.append(f"🧹 Sanitized {i + 1}/{len(documents)} documents...")
+            update_logs(log_placeholder)
+            log_to_sublog(project_dir, "rag_manager.log", f"Sanitized {i + 1}/{len(documents)} documents...")
+    
+    st.session_state.thinking_logs.append(f"✅ Sanitized {len(sanitized_docs)} documents")
+    update_logs(log_placeholder)
+    logger.info(f"Document sanitization completed: {len(sanitized_docs)} documents ready")
+    log_to_sublog(project_dir, "rag_manager.log", f"Sanitized {len(sanitized_docs)} documents")
 
     # Store in persistent vector DB (Chroma)
-    vectorstore = Chroma.from_documents(
-        documents=sanitized_docs,
-        embedding=embeddings,
-        persist_directory=project_config.get_db_dir()
-    )
+    st.session_state.thinking_logs.append("🔄 Creating vector database...")
+    update_logs(log_placeholder)
+    logger.info("Starting vector database creation")
+    log_to_sublog(project_dir, "rag_manager.log", "Creating vector database...")
+    
+    try:
+        # Add timeout and progress tracking for embedding computation
+        start_time = time.time()
+        timeout_minutes = 10  # 10 minute timeout for embedding computation
+        
+        # Process documents in batches to provide progress feedback
+        batch_size = 10
+        total_batches = (len(sanitized_docs) + batch_size - 1) // batch_size
+        
+        st.session_state.thinking_logs.append(f"📊 Processing {len(sanitized_docs)} documents in {total_batches} batches...")
+        update_logs(log_placeholder)
+        log_to_sublog(project_dir, "rag_manager.log", f"Processing {len(sanitized_docs)} documents in {total_batches} batches...")
+        
+        # Check if Ollama is responsive before starting embedding computation
+        try:
+            import requests
+            response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
+            if response.status_code != 200:
+                raise Exception(f"Ollama not responding: {response.status_code}")
+            log_to_sublog(project_dir, "rag_manager.log", "Ollama is responsive, starting embedding computation...")
+        except Exception as e:
+            error_msg = f"Ollama not available at {ollama_endpoint}: {e}"
+            st.error(f"❌ {error_msg}")
+            log_to_sublog(project_dir, "rag_manager.log", error_msg)
+            raise Exception(error_msg)
+        
+        # Create vectorstore with batch processing and retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                vectorstore = Chroma.from_documents(
+                    documents=sanitized_docs,
+                    embedding=embeddings,
+                    persist_directory=project_config.get_db_dir()
+                )
+                break  # Success, exit retry loop
+            except Exception as e:
+                if "readonly database" in str(e).lower() or "database is locked" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        log_to_sublog(project_dir, "build_rag.log", f"Database locked, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
+                        st.session_state.thinking_logs.append(f"⚠️ Database locked, retrying... (attempt {attempt + 1}/{max_retries})")
+                        update_logs(log_placeholder)
+                        time.sleep(2)
+                        continue
+                    else:
+                        log_to_sublog(project_dir, "build_rag.log", f"Failed to create database after {max_retries} attempts: {e}")
+                        raise e
+                else:
+                    # Non-locking error, don't retry
+                    raise e
+        
+        # Check if we exceeded timeout
+        elapsed_time = time.time() - start_time
+        if elapsed_time > (timeout_minutes * 60):
+            error_msg = f"Embedding computation timed out after {timeout_minutes} minutes"
+            st.error(f"❌ {error_msg}")
+            log_to_sublog(project_dir, "rag_manager.log", error_msg)
+            raise TimeoutError(error_msg)
+        
+        st.session_state.thinking_logs.append("💾 Vector database created and persisted!")
+        update_logs(log_placeholder)
+        logger.info("Vector database created and persisted to disk")
+        log_to_sublog(project_dir, "rag_manager.log", "Vector database created and persisted!")
+        
+        st.session_state.thinking_logs.append("✅ Vector database created successfully!")
+        update_logs(log_placeholder)
+        logger.info("Vector database creation completed")
+        log_to_sublog(project_dir, "rag_manager.log", f"Vector database created successfully! (took {elapsed_time:.1f}s)")
+        
+    except TimeoutError as e:
+        st.error(f"❌ {e}")
+        log_to_sublog(project_dir, "rag_manager.log", f"Embedding computation timeout: {e}")
+        raise e
+    except Exception as e:
+        st.session_state.thinking_logs.append(f"❌ Error creating vector database: {e}")
+        update_logs(log_placeholder)
+        logger.error(f"Vector database creation failed: {e}")
+        log_to_sublog(project_dir, "rag_manager.log", f"Error creating vector database: {e}")
+        raise e
 
     processing_time = time.time() - start_time
     st.session_state.thinking_logs.append(
         f"📊 Processing complete: {processing_stats['chunks_created']} chunks from "
         f"{processing_stats['files_processed']} files in {processing_time:.2f}s"
     )
+    log_to_sublog(project_dir, "rag_manager.log", 
+        f"Processing complete: {processing_stats['chunks_created']} chunks from "
+        f"{processing_stats['files_processed']} files in {processing_time:.2f}s")
+    
     if processing_stats["duplicates_skipped"] > 0:
         st.session_state.thinking_logs.append(
             f"🔍 Skipped {processing_stats['duplicates_skipped']} duplicate chunks"
         )
+        log_to_sublog(project_dir, "rag_manager.log", f"Skipped {processing_stats['duplicates_skipped']} duplicate chunks")
+    
     if processing_stats["anchorless_chunks"] > 0:
         st.session_state.thinking_logs.append(
             f"⚠️ Skipped {processing_stats['anchorless_chunks']} chunks due to missing semantic anchors – see chunking_metadata.log"
         )
+        log_to_sublog(project_dir, "rag_manager.log", f"Skipped {processing_stats['anchorless_chunks']} chunks due to missing semantic anchors")
+    
     if processing_stats["errors"] > 0:
         st.session_state.thinking_logs.append(
             f"⚠️ {processing_stats['errors']} files had processing errors"
         )
+        log_to_sublog(project_dir, "rag_manager.log", f"{processing_stats['errors']} files had processing errors")
+    
     update_logs(log_placeholder)
 
     st.success("✅ Enhanced vector database created successfully!")
@@ -271,7 +469,9 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     log_highlight("END build_rag", logger)
     return vectorstore.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 10}
+        search_kwargs={
+            "k": 15  # Increased from 10 to get more candidates
+        }
     )
 
 def get_impact(file_name: str, project_dir: str = None) -> List[str]:
