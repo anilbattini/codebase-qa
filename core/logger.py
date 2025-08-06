@@ -63,38 +63,45 @@ def _get_logs_dir(project_dir):
         abs_project_dir = os.path.dirname(abs_project_dir)
     
     # Import ProjectConfig here to avoid circular dependency at module level
-    from config import ProjectConfig 
-    
-    # Try to get project type from session state or environment
-    project_type = None
     try:
-        import streamlit as st
-        if hasattr(st, 'session_state') and st.session_state.get("selected_project_type"):
-            project_type = st.session_state.selected_project_type
-    except:
-        pass
-    
-    # If no project type from session, try to auto-detect
-    if not project_type:
-        temp_config = ProjectConfig(project_dir=abs_project_dir)
-        project_type = temp_config.project_type
-    
-    # Only create logs directory if project type is selected and not unknown
-    if project_type and project_type != "unknown":
-        # Build the logs directory path
-        logs_dir = os.path.join(abs_project_dir, f"codebase-qa_{project_type}", "logs")
+        from config import ProjectConfig 
         
-        # CRITICAL: Prevent nested logs directories
-        # If the path already contains '/logs', don't append another one
-        if '/logs' in logs_dir and logs_dir.endswith('/logs'):
-            # Remove any trailing /logs to prevent nesting
-            logs_dir = logs_dir.replace('/logs/logs', '/logs').replace('/logs/logs/', '/logs/')
+        # Try to get project type from session state or environment
+        project_type = None
+        try:
+            import streamlit as st
+            if hasattr(st, 'session_state') and st.session_state.get("selected_project_type"):
+                project_type = st.session_state.selected_project_type
+        except:
+            pass
         
-        # Ensure the directory exists
-        os.makedirs(logs_dir, exist_ok=True)
-        return logs_dir
-    else:
-        # Fallback to a temporary location if no project type selected
+        # If no project type from session, try to auto-detect
+        if not project_type:
+            temp_config = ProjectConfig(project_dir=abs_project_dir)
+            project_type = temp_config.project_type
+        
+        # Only create logs directory if project type is selected and not unknown
+        if project_type and project_type != "unknown":
+            # Build the logs directory path
+            logs_dir = os.path.join(abs_project_dir, f"codebase-qa_{project_type}", "logs")
+            
+            # CRITICAL: Prevent nested logs directories
+            # If the path already contains '/logs', don't append another one
+            if '/logs' in logs_dir and logs_dir.endswith('/logs'):
+                # Remove any trailing /logs to prevent nesting
+                logs_dir = logs_dir.replace('/logs/logs', '/logs').replace('/logs/logs/', '/logs/')
+            
+            # Ensure the directory exists
+            os.makedirs(logs_dir, exist_ok=True)
+            return logs_dir
+        else:
+            # Fallback to a temporary location if no project type selected
+            temp_dir = os.path.join(abs_project_dir, "temp_logs")
+            os.makedirs(temp_dir, exist_ok=True)
+            return temp_dir
+            
+    except ImportError:
+        # Fallback if config module is not available
         temp_dir = os.path.join(abs_project_dir, "temp_logs")
         os.makedirs(temp_dir, exist_ok=True)
         return temp_dir
