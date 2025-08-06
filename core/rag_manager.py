@@ -1,8 +1,10 @@
 import os
+import shutil
 import streamlit as st
 from langchain_ollama import ChatOllama
 from langchain.chains import RetrievalQA
 from config import ProjectConfig
+from model_config import model_config
 from logger import log_highlight, log_to_sublog
 from build_rag import build_rag
 from chat_handler import ChatHandler
@@ -26,18 +28,110 @@ class RagManager:
         st.session_state.setdefault("qa_chain", None)
         st.session_state.setdefault("chat_history", [])
     
-    def setup_llm(self, ollama_model, ollama_endpoint):
+    def setup_llm(self, ollama_model=None, ollama_endpoint=None):
         """Setup the language model."""
+        if ollama_model is None:
+            ollama_model = model_config.get_ollama_model()
+        if ollama_endpoint is None:
+            ollama_endpoint = model_config.get_ollama_endpoint()
         self.llm = ChatOllama(model=ollama_model, base_url=ollama_endpoint)
         return self.llm
+    
+    def cleanup_existing_files(self, project_dir, project_type):
+        """Delete all existing generated files for a complete rebuild."""
+        log_to_sublog(project_dir, "rag_manager.log", "=== FORCE REBUILD: CLEANING UP EXISTING FILES ===")
+        
+        try:
+            # Get project configuration
+            project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
+            db_dir = project_config.get_db_dir()
+            logs_dir = project_config.get_logs_dir()
+            
+            # First, clear any existing Chroma connections
+            try:
+                import chromadb
+                # Force close any existing Chroma clients
+                if hasattr(chromadb, 'Client'):
+                    # This will help release any file locks
+                    pass
+            except Exception as e:
+                log_to_sublog(project_dir, "rag_manager.log", f"Note: Could not clear Chroma connections: {e}")
+            
+            # List of files/directories to delete
+            cleanup_targets = []
+            
+            # Vector database directory
+            if os.path.exists(db_dir):
+                cleanup_targets.append(db_dir)
+                log_to_sublog(project_dir, "rag_manager.log", f"Will delete vector database directory: {db_dir}")
+            
+            # Logs directory (optional - keep for debugging)
+            # if os.path.exists(logs_dir):
+            #     cleanup_targets.append(logs_dir)
+            #     log_to_sublog(project_dir, "rag_manager.log", f"Will delete logs directory: {logs_dir}")
+            
+            # Delete each target with retry logic
+            for target in cleanup_targets:
+                if os.path.exists(target):
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            if os.path.isdir(target):
+                                shutil.rmtree(target)
+                                log_to_sublog(project_dir, "rag_manager.log", f"✅ Deleted directory: {target}")
+                            else:
+                                os.remove(target)
+                                log_to_sublog(project_dir, "rag_manager.log", f"✅ Deleted file: {target}")
+                            break
+                        except PermissionError as e:
+                            if attempt < max_retries - 1:
+                                log_to_sublog(project_dir, "rag_manager.log", f"⚠️ Permission error deleting {target}, retrying in 1 second... (attempt {attempt + 1}/{max_retries})")
+                                import time
+                                time.sleep(1)
+                            else:
+                                log_to_sublog(project_dir, "rag_manager.log", f"❌ Failed to delete {target} after {max_retries} attempts: {e}")
+                                raise e
+                        except Exception as e:
+                            log_to_sublog(project_dir, "rag_manager.log", f"❌ Error deleting {target}: {e}")
+                            raise e
+            
+            # Clear session state
+            session_keys_to_clear = ["retriever", "qa_chain", "project_dir_used", "thinking_logs"]
+            for key in session_keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+                    log_to_sublog(project_dir, "rag_manager.log", f"✅ Cleared session state: {key}")
+            
+            # Reset instance variables
+            self.retriever = None
+            self.qa_chain = None
+            self.llm = None
+            
+            # Add a small delay to ensure file system operations complete
+            import time
+            time.sleep(0.5)
+            
+            log_to_sublog(project_dir, "rag_manager.log", "=== CLEANUP COMPLETE ===")
+            return True
+            
+        except Exception as e:
+            log_to_sublog(project_dir, "rag_manager.log", f"❌ Error during cleanup: {e}")
+            import traceback
+            log_to_sublog(project_dir, "rag_manager.log", f"Traceback: {traceback.format_exc()}")
+            return False
     
     def should_rebuild_index(self, project_dir, force_rebuild, project_type):
         """Check if the RAG index should be rebuilt based on database existence and git tracking."""
         from git_hash_tracker import FileHashTracker
         
-        # If force rebuild is requested, always rebuild
+        # If force rebuild is requested, cleanup and always rebuild
         if force_rebuild:
-            log_to_sublog(project_dir, "rag_manager.log", "Force rebuild requested")
+            log_to_sublog(project_dir, "rag_manager.log", "=== FORCE REBUILD REQUESTED ===")
+            cleanup_success = self.cleanup_existing_files(project_dir, project_type)
+            if cleanup_success:
+                log_to_sublog(project_dir, "rag_manager.log", "✅ Force rebuild: Cleanup successful, will rebuild")
+            else:
+                log_to_sublog(project_dir, "rag_manager.log", "⚠️ Force rebuild: Cleanup failed, but will still rebuild")
             return True
         
         # Get project configuration
@@ -71,6 +165,7 @@ class RagManager:
     def build_rag_index(self, project_dir, ollama_model, ollama_endpoint, project_type, log_placeholder):
         """Build the RAG index and setup QA chain."""
         log_highlight("RagManager.build_rag_index")
+        
         with st.spinner("🔄 Building RAG index..."):
             retriever = build_rag(
                 project_dir=project_dir,
@@ -111,8 +206,31 @@ class RagManager:
             project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
             db_dir = project_config.get_db_dir()
             
-            # Setup embeddings
-            embeddings = OllamaEmbeddings(model=ollama_model, base_url=ollama_endpoint)
+            # Use the same embedding model logic as build_rag.py
+            embedding_model = "nomic-embed-text:latest"  # Same as build_rag.py
+            
+            # Check if the dedicated embedding model is available, fallback to original model
+            try:
+                import requests
+                response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
+                if response.status_code == 200:
+                    available_models = response.json().get("models", [])
+                    model_names = [model.get("name", "") for model in available_models]
+                    
+                    if embedding_model in model_names:
+                        log_to_sublog(project_dir, "rag_manager.log", f"Using dedicated embedding model: {embedding_model}")
+                    else:
+                        log_to_sublog(project_dir, "rag_manager.log", f"Dedicated embedding model not found, using LLM model: {ollama_model}")
+                        embedding_model = ollama_model
+                else:
+                    log_to_sublog(project_dir, "rag_manager.log", f"Could not check models, using LLM model: {ollama_model}")
+                    embedding_model = ollama_model
+            except Exception as e:
+                log_to_sublog(project_dir, "rag_manager.log", f"Could not check available models, using LLM model: {e}")
+                embedding_model = ollama_model
+            
+            # Setup embeddings with the correct model
+            embeddings = OllamaEmbeddings(model=embedding_model, base_url=ollama_endpoint)
             
             # Load existing Chroma database
             vectorstore = Chroma(
@@ -123,12 +241,12 @@ class RagManager:
             # Create retriever
             retriever = vectorstore.as_retriever(
                 search_type="similarity",
-                search_kwargs={"k": 5}
+                search_kwargs={"k": 15}  # Increased for better retrieval
             )
             
             st.session_state["retriever"] = retriever
             st.session_state["project_dir_used"] = project_dir
-            log_to_sublog(project_dir, "rag_manager.log", f"Loaded existing RAG index from: {db_dir}")
+            log_to_sublog(project_dir, "rag_manager.log", f"Loaded existing RAG index from: {db_dir} with embedding model: {embedding_model}")
             
             # Setup LLM
             llm = self.setup_llm(ollama_model, ollama_endpoint)
