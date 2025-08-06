@@ -56,8 +56,18 @@ ui.render_custom_css()
 project_config = ProjectConfig(project_dir=project_dir, project_type=st.session_state.selected_project_type)
 should_rebuild = rag_manager.should_rebuild_index(project_dir, force_rebuild, st.session_state.selected_project_type)
 
+# Clear force rebuild flag after checking
+if st.session_state.get("force_rebuild"):
+    del st.session_state["force_rebuild"]
+
 if should_rebuild:
-    st.session_state.thinking_logs.clear()
+    # Ensure session state is properly initialized before clearing
+    rag_manager.initialize_session_state()
+    # Safely clear thinking logs
+    if "thinking_logs" in st.session_state:
+        st.session_state.thinking_logs.clear()
+    else:
+        st.session_state.setdefault("thinking_logs", [])
     log_highlight("app.py: Starting RAG index build")
     
     # Protect the RAG build process
@@ -99,21 +109,44 @@ if rag_manager.is_ready():
         project_config=project_config
     )
     
-    query, submitted = ui.render_chat_input(project_config)
+    query, submitted = ui.render_chat_input()
 
     if submitted and query:
+        # Ensure thinking_logs is initialized before clearing
+        st.session_state.setdefault("thinking_logs", [])
         st.session_state.thinking_logs.clear()
         
         with st.chat_message("user"):
             st.markdown(query)
 
+        # Create a dedicated log placeholder for processing logs
+        log_placeholder = st.empty()
+        
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                answer, reranked_docs, impact_files = chat_handler.process_query(
-                    query, st.session_state["qa_chain"], st.empty(), debug_mode
-                )
-                st.markdown(answer)
-        st.rerun() # Rerun to display the new chat history correctly
+                try:
+                    answer, reranked_docs, impact_files, metadata = chat_handler.process_query(
+                        query, st.session_state["qa_chain"], log_placeholder, debug_mode
+                    )
+                    if answer:
+                        # Clear the processing logs and display only the clean answer
+                        log_placeholder.empty()
+                        st.markdown(answer)
+                    else:
+                        log_placeholder.empty()
+                        st.error("❌ No answer generated. Please try again.")
+                except Exception as e:
+                    log_placeholder.empty()
+                    st.error(f"❌ Error processing query: {e}")
+                    log_highlight(f"app.py: Chat processing error: {e}")
+        
+        # Store the answer in session state for persistence
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Store in the expected format: (query, answer, source_docs, impact_files, metadata)
+        chat_item = (query, answer, reranked_docs, impact_files, metadata)
+        st.session_state.chat_history.append(chat_item)
 
 # 5. Optional Debug Section
 if debug_mode:
