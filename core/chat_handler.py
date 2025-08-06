@@ -21,13 +21,19 @@ class ChatHandler:
         self.project_dir = project_dir
 
     def _create_rewrite_chain(self):
+        """Create a chain for rewriting queries to be more searchable."""
         prompt = PromptTemplate(
             input_variables=["original", "project_type", "intent"],
             template=(
-                "You are a codebase analysis assistant. Rephrase the following question to be more specific "
+                "You are a codebase search assistant. Convert the following question into a simple, searchable query "
                 "for searching a {project_type} project codebase.\n\n"
                 "Intent: {intent}\nOriginal: {original}\n\n"
-                "Improved Query:"
+                "Return ONLY a concise search query (no explanations, no alternatives, no markdown). "
+                "Focus on key terms that would appear in the codebase.\n\n"
+                "IMPORTANT: For questions about 'what does this project do', 'project overview', or 'main purpose', "
+                "include terms like: main activity, MainActivity, application, app purpose, project structure, "
+                "manifest, build.gradle, README, documentation.\n\n"
+                "Search Query:"
             )
         )
         return prompt | self.llm
@@ -35,13 +41,19 @@ class ChatHandler:
     def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):
         """Enhanced query processing with intent classification, rewriting, hierarchy-aware context, and RAG support."""
         log_highlight("ChatHandler.process_query")
+        
+        # Ensure thinking_logs is initialized
+        st.session_state.setdefault("thinking_logs", [])
+        
         st.session_state.thinking_logs.append("🧠 Starting enhanced query processing...")
         update_logs(log_placeholder)
+        log_to_sublog(self.project_dir, "chat_handler.log", f"Starting query processing: {query}")
 
         # 1. Intent classification
         intent, confidence = self.query_intent_classifier.classify_intent(query)
         st.session_state.thinking_logs.append(f"🎯 Detected intent: {intent} (confidence: {confidence:.2f})")
         update_logs(log_placeholder)
+        log_to_sublog(self.project_dir, "chat_handler.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
         if debug_mode:
             st.info(f"🎯 **Query Intent**: {intent} (confidence: {confidence:.2f})")
 
@@ -50,6 +62,7 @@ class ChatHandler:
         if disable_rag:
             st.session_state.thinking_logs.append("⚙️ RAG is disabled – sending query directly to LLM.")
             update_logs(log_placeholder)
+            log_to_sublog(self.project_dir, "chat_handler.log", "RAG disabled - sending query directly to LLM")
             # Minimal context path: skip rewriting, retrieval, context building
             rewritten = query
             impact_files, impact_context = [], ""
@@ -57,27 +70,54 @@ class ChatHandler:
         else:
             # 2. Enhanced query rewriting
             rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Query rewritten: '{query}' -> '{rewritten}'")
 
             # 3. Impact analysis (if applicable)
             impact_files, impact_context = self._analyze_impact_with_intent(query, intent, log_placeholder)
+            if impact_files:
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Impact analysis: {len(impact_files)} files affected")
 
             # 4. Prepare retrieval hints
             query_hints = self.query_intent_classifier.get_query_context_hints(intent, query)
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Query hints: {query_hints}")
 
             # 5. Retrieve documents
             st.session_state.thinking_logs.append("📖 Performing intelligent document retrieval...")
             update_logs(log_placeholder)
+            log_to_sublog(self.project_dir, "chat_handler.log", "Starting document retrieval...")
             retriever = st.session_state.get("retriever")
 
             if not retriever:
                 st.error("❌ No retriever found. Please rebuild the RAG index before querying.")
+                log_to_sublog(self.project_dir, "chat_handler.log", "ERROR: No retriever found")
                 return None, [], []
 
             try:
+                # Try with rewritten query first
                 retrieved_docs = retriever.invoke(rewritten)
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with rewritten query")
+                
+                # If no results, try with original query as fallback
+                if not retrieved_docs:
+                    st.session_state.thinking_logs.append("⚠️ No results with rewritten query, trying original...")
+                    update_logs(log_placeholder)
+                    retrieved_docs = retriever.invoke(query)
+                    log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with original query")
+                
+                # If still no results, try with key terms
+                if not retrieved_docs:
+                    st.session_state.thinking_logs.append("⚠️ No results, trying with key terms...")
+                    update_logs(log_placeholder)
+                    key_terms = self._extract_key_terms(query)
+                    if key_terms:
+                        key_query = " ".join(key_terms)
+                        retrieved_docs = retriever.invoke(key_query)
+                        log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with key terms: {key_terms}")
+                
             except Exception as e:
                 st.error(f"❌ Retrieval failed: {e}")
-                return "Sorry, I couldn't retrieve supporting documents.", [], []
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieval failed: {e}")
+                return "Sorry, I couldn't retrieve supporting documents.", [], [], {}
 
             if debug_mode:
                 st.info(f"📊 Retrieved {len(retrieved_docs)} chunks")
@@ -85,6 +125,7 @@ class ChatHandler:
             # 6. Build final context
             st.session_state.thinking_logs.append("🏗️ Building enhanced context window...")
             update_logs(log_placeholder)
+            log_to_sublog(self.project_dir, "chat_handler.log", "Building enhanced context window...")
 
             try:
                 enhanced_context = self.context_builder.build_enhanced_context(
@@ -93,53 +134,63 @@ class ChatHandler:
                     intent=intent,
                     query_hints=query_hints
                 )
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced context built: {len(enhanced_context)} characters")
             except Exception as e:
                 st.error(f"❌ Context building failed: {e}")
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Context building failed: {e}")
                 enhanced_context = ""
 
         # 7. Generate prompt and invoke LLM
-        st.session_state.thinking_logs.append("🤖 Generating final contextual answer...")
+        st.session_state.thinking_logs.append("🤖 Generating answer with enhanced context...")
         update_logs(log_placeholder)
-
-        enhanced_query = self._create_enhanced_query(
-            query, rewritten, intent, impact_context, enhanced_context
-        )
+        log_to_sublog(self.project_dir, "chat_handler.log", "Generating answer with enhanced context...")
 
         try:
+            # Create enhanced query with context
+            enhanced_query = self._create_enhanced_query(
+                original_query=query,
+                rewritten_query=rewritten,
+                intent=intent,
+                impact_context=impact_context,
+                enhanced_context=enhanced_context
+            )
+            
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced query created: {len(enhanced_query)} characters")
+            
+            # Invoke QA chain
             result = qa_chain.invoke({"query": enhanced_query})
-            answer = result.get("result", "ℹ️ No answer was generated.")
-            source_docs = result.get("source_documents", [])
+            answer = result.get("result", "Sorry, I couldn't generate an answer.")
+            source_documents = result.get("source_documents", [])
+            
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Answer generated: {len(answer)} characters")
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Source documents: {len(source_documents)} documents")
+            
+            # Rerank documents by intent if we have source documents
+            if source_documents:
+                reranked_docs = self._rerank_docs_by_intent(source_documents, query, intent)
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
+            else:
+                reranked_docs = []
+                log_to_sublog(self.project_dir, "chat_handler.log", "No source documents to rerank")
+            
+            st.session_state.thinking_logs.append("✅ Answer generated successfully!")
+            update_logs(log_placeholder)
+            log_to_sublog(self.project_dir, "chat_handler.log", "Query processing completed successfully")
+            
+            # Create metadata for UI display
+            metadata = {
+                "intent": intent,
+                "confidence": confidence,
+                "rewritten_query": rewritten,
+                "enhanced_query": enhanced_query[:200] + "..." if len(enhanced_query) > 200 else enhanced_query
+            }
+            
+            return answer, reranked_docs, impact_files, metadata
+            
         except Exception as e:
-            st.error(f"❌ LLM failed: {e}")
-            return "Sorry, something went wrong while generating the answer.", [], []
-
-        st.session_state.thinking_logs.append("✨ Answer generated successfully!")
-        update_logs(log_placeholder)
-
-        # 8. Prioritize & Store in chat history
-        reranked_docs = self._rerank_docs_by_intent(source_docs, query, intent)
-
-        conversation_metadata = {
-            "intent": intent,
-            "confidence": confidence,
-            "rewritten_query": rewritten,
-            "context_hints": self.query_intent_classifier.get_query_context_hints(intent, query),
-            "rag_used": not disable_rag
-        }
-
-        new_qa_key = f"qa_{len(st.session_state['chat_history'])}"
-        st.session_state["chat_history"].append(
-            (query, answer, reranked_docs, impact_files, conversation_metadata)
-        )
-        st.session_state["expand_latest"] = new_qa_key
-
-        st.session_state.thinking_logs.append("💾 Saved to session history")
-        update_logs(log_placeholder)
-
-        if debug_mode:
-            st.success("✅ Processing complete")
-
-        return answer, reranked_docs, impact_files
+            st.error(f"❌ Error generating answer: {e}")
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Error generating answer: {e}")
+            return f"Sorry, I encountered an error while processing your query: {e}", [], [], {}
 
     # ------------------ Helper Methods ------------------
 
@@ -231,15 +282,41 @@ class ChatHandler:
             file_mentions.extend(re.findall(pat, query, re.IGNORECASE))
         return list(set(file_mentions))
 
+    def _extract_key_terms(self, query):
+        """Extract key terms from a query using a simple tokenizer."""
+        tokens = re.findall(r'\b\w+\b', query.lower())
+        return [t for t in tokens if len(t) > 3 and not t.isdigit()] # Filter out short words and numbers
+
     def _create_enhanced_query(self, original_query, rewritten_query, intent, impact_context, enhanced_context):
-        parts = [f"🧠 Intent: {intent}"]
-        if impact_context:
-            parts.append(f"📎 Impact:\n{impact_context}")
+        # Create a more focused query that doesn't overwhelm the LLM
         if enhanced_context:
-            parts.append(f"📚 Context:\n{enhanced_context}")
-        parts.append(f"💬 Rewritten Query:\n{rewritten_query}")
-        parts.append(f"User asked:\n{original_query}")
-        return "\n\n".join(parts)
+            # Use the enhanced context but keep the query focused
+            if intent == "overview":
+                return f"""Based on this comprehensive codebase context:
+
+{enhanced_context}
+
+Answer this question directly and confidently: {rewritten_query}
+
+IMPORTANT INSTRUCTIONS:
+- Provide a clear, direct answer about what this project does
+- Focus on the main purpose, key components, and functionality
+- Use specific details from the code context provided
+- Avoid phrases like "I don't know", "it appears", or "based on the provided context"
+- Give a definitive answer based on the actual code structure
+- If you see MainActivity, manifest files, or build configurations, use those to explain the app's purpose
+- Be confident and specific about the project's functionality"""
+            else:
+                return f"""Based on this detailed codebase context:
+
+{enhanced_context}
+
+Answer this question: {rewritten_query}
+
+Provide a clear, specific answer based on the code context. Use concrete details from the code to support your response."""
+        else:
+            # Fallback to the rewritten query if no enhanced context
+            return rewritten_query
 
     def _is_impact_question(self, query):
         impact_keywords = [
