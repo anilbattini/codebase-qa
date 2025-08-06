@@ -10,6 +10,8 @@ class QueryIntentClassifier:
     PATTERN_MAP: Dict[str, List[str]] = {
         "overview": [
             r"\b(overview|structure|architecture|summary|top level|entry point|project files|high level|all files|main flow|overall)\b",
+            r"\b(what does this project do|project purpose|main purpose|what is this|project description|project overview)\b",
+            r"\b(what is the main|main activity|MainActivity|application purpose|app does what)\b"
         ],
         "validation": [
             r"\b(validate|input field|required|constraint|rules|check for|form field|input rule|not null|input error)\b",
@@ -32,12 +34,28 @@ class QueryIntentClassifier:
     def classify_intent(self, query: str) -> Tuple[str, float]:
         """Returns (intent_label, confidence_score) for user query."""
         log_highlight("QueryIntentClassifier.classify_intent")
+        
+        # Check for project overview questions first (highest priority)
+        overview_patterns = [
+            r"\b(what does this project do|project purpose|main purpose|what is this|project description|project overview)\b",
+            r"\b(what is the main|main activity|MainActivity|application purpose|app does what)\b"
+        ]
+        
+        for pat in overview_patterns:
+            if re.search(pat, query, re.IGNORECASE):
+                log_to_sublog(".", 'intent_classification.log',
+                              f"[HIGH CONFIDENCE] Query: '{query}' matched 'overview' via pattern '{pat}'.")
+                return 'overview', 0.95  # High confidence for project overview questions
+        
+        # Check other patterns
         for label, patterns in self.PATTERN_MAP.items():
             for pat in patterns:
                 if re.search(pat, query, re.IGNORECASE):
+                    confidence = 0.9 if label == 'overview' else 0.8
                     log_to_sublog(".", 'intent_classification.log',
                                   f"[SELECTED] Query: '{query}' matched '{label}' via pattern '{pat}'.")
-                    return label, 1.0
+                    return label, confidence
+        
         # No strong match, fallback to default (can add LLM classifier for advanced disambiguation)
         log_to_sublog(".", 'intent_classification.log',
                       f"[FALLBACK] Query: '{query}'—no pattern match. Defaulting to technical.")
