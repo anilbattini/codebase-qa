@@ -1,5 +1,5 @@
 """
-Chunk analysis tools for debugging semantic chunking and anchor quality.
+Chunk analysis tools for debugging semantic chunking and anchor quality using actual core functionality.
 """
 
 import os
@@ -11,80 +11,207 @@ from typing import List, Dict, Any
 # Add parent directory to path to import from codebase-qa root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import log_highlight, log_to_sublog
+from langchain_ollama import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
+
+def get_available_files(project_config):
+    """Get list of files that were actually processed from git_tracking.json."""
+    try:
+        # Get the git tracking file path
+        db_dir = project_config.get_db_dir()
+        git_tracking_file = os.path.join(db_dir, "git_tracking.json")
+        
+        if not os.path.exists(git_tracking_file):
+            log_to_sublog(project_config.project_dir, "debug_tools.log", 
+                         f"Git tracking file not found: {git_tracking_file}")
+            return []
+        
+        # Read the git tracking file to get processed files
+        with open(git_tracking_file, 'r') as f:
+            git_data = json.load(f)
+        
+        # Get the list of processed files (they are the keys, not in a "files" subobject)
+        processed_files = list(git_data.keys())
+        
+        # Convert absolute paths to relative paths
+        relative_files = []
+        for abs_path in processed_files:
+            try:
+                rel_path = os.path.relpath(abs_path, project_config.project_dir)
+                relative_files.append(rel_path)
+            except ValueError:
+                # If the file is not in the project directory, skip it
+                continue
+        
+        log_to_sublog(project_config.project_dir, "debug_tools.log", 
+                     f"Found {len(relative_files)} processed files from git_tracking.json")
+        
+        return sorted(relative_files)
+        
+    except Exception as e:
+        log_to_sublog(project_config.project_dir, "debug_tools.log", 
+                     f"Error getting processed files: {e}")
+        return []
 
 def analyze_chunks(project_config, retriever=None):
-    """Analyze chunk quality and anchor distribution."""
+    """Analyze chunk quality and anchor distribution using the existing retriever from session state."""
     log_highlight("ChunkAnalyzer.analyze_chunks")
     
     st.subheader("🧩 Chunk Quality Analysis")
     
-    # Load hierarchical index for chunk analysis
-    hierarchy_file = project_config.get_hierarchy_file()
-    
-    if not os.path.exists(hierarchy_file):
-        st.warning("⚠️ No hierarchical index found for chunk analysis")
-        return
-    
     try:
-        with open(hierarchy_file, 'r') as f:
-            hierarchy = json.load(f)
+        # Use the retriever from session state (same as main app)
+        if not retriever:
+            retriever = st.session_state.get("retriever")
         
-        analyze_chunk_distribution(hierarchy)
-        analyze_anchor_quality(hierarchy, project_config)
-        analyze_file_coverage(hierarchy, project_config)
+        if not retriever:
+            st.error("❌ No retriever available - RAG system not ready")
+            return
         
-        if retriever:
-            analyze_retrieval_patterns(retriever, project_config)
+        # Get vectorstore from the retriever
+        vectorstore = retriever.vectorstore
+        if not vectorstore:
+            st.error("❌ Could not access vectorstore from retriever")
+            return
+        
+        # Get all documents from the vectorstore
+        collection = vectorstore._collection
+        results = collection.get()
+        documents = results.get('documents', [])
+        metadatas = results.get('metadatas', [])
+        
+        st.write(f"**📊 Total chunks in database: {len(documents)}**")
+        
+        # Analyze chunk distribution by file
+        file_distribution = {}
+        for metadata in metadatas:
+            if metadata and 'source' in metadata:
+                source = metadata['source']
+                file_distribution[source] = file_distribution.get(source, 0) + 1
+        
+        st.write(f"**📁 Files with chunks: {len(file_distribution)}**")
+        
+        # Show top files by chunk count
+        top_files = sorted(file_distribution.items(), key=lambda x: x[1], reverse=True)[:10]
+        st.write("**📈 Top files by chunk count:**")
+        for file_path, count in top_files:
+            st.write(f"  • {file_path}: {count} chunks")
+        
+        # Show processed files vs all project files
+        processed_files = get_available_files(project_config)
+        if processed_files:
+            st.write(f"**📋 Actually processed files: {len(processed_files)}**")
+            st.write("These are the files that were actually processed and indexed:")
+            for file_path in processed_files[:10]:  # Show first 10
+                st.write(f"  • {file_path}")
+            if len(processed_files) > 10:
+                st.write(f"  ... and {len(processed_files) - 10} more files")
+        
+        # Analyze anchor quality
+        analyze_anchor_quality_from_metadata(metadatas)
         
     except Exception as e:
         st.error(f"❌ Error analyzing chunks: {e}")
+        log_to_sublog(project_config.project_dir, "debug_tools.log", f"Error analyzing chunks: {e}")
 
 def analyze_file_chunks(project_config, retriever=None, file_path=None):
-    """Analyze chunks for a specific file and return chunk data."""
+    """Analyze chunks for a specific file using the existing retriever from session state."""
     log_highlight(f"ChunkAnalyzer.analyze_file_chunks for {file_path}")
     
     if not file_path:
+        log_to_sublog(project_config.project_dir, "debug_tools.log", "No file path provided for chunk analysis")
         return []
     
     try:
-        # Load hierarchical index
-        hierarchy_file = project_config.get_hierarchy_file()
-        if not os.path.exists(hierarchy_file):
+        log_to_sublog(project_config.project_dir, "debug_tools.log", 
+                     f"Starting chunk analysis for file: {file_path}")
+        
+        # Use the retriever from session state (same as main app)
+        if not retriever:
+            retriever = st.session_state.get("retriever")
+        
+        if not retriever:
+            log_to_sublog(project_config.project_dir, "debug_tools.log", "No retriever available in session state")
             return []
         
-        with open(hierarchy_file, 'r') as f:
-            hierarchy = json.load(f)
-        
-        # Get file-level data
-        file_level = hierarchy.get("file_level", {})
-        file_data = file_level.get(file_path, {})
-        
-        if not file_data:
+        # Get vectorstore from the retriever
+        vectorstore = retriever.vectorstore
+        if not vectorstore:
+            log_to_sublog(project_config.project_dir, "debug_tools.log", "Could not access vectorstore from retriever")
             return []
         
-        # Extract chunk information
-        chunks = []
-        chunk_data = file_data.get("chunks", [])
+        # Get all documents from the vectorstore
+        collection = vectorstore._collection
+        results = collection.get()
+        documents = results.get('documents', [])
+        metadatas = results.get('metadatas', [])
         
-        for i, chunk_info in enumerate(chunk_data):
-            chunk = {
-                "content": chunk_info.get("content", ""),
-                "metadata": {
-                    "source": file_path,
-                    "chunk_index": i,
-                    "start_line": chunk_info.get("start_line", 0),
-                    "end_line": chunk_info.get("end_line", 0),
-                    "type": chunk_info.get("type", "unknown"),
-                    "anchors": chunk_info.get("anchors", [])
+        # Filter chunks for the specific file
+        file_chunks = []
+        for i, metadata in enumerate(metadatas):
+            if metadata and metadata.get('source') == file_path:
+                chunk = {
+                    "content": documents[i] if i < len(documents) else "",
+                    "metadata": metadata,
+                    "chunk_index": metadata.get('chunk_index', i),
+                    "type": metadata.get('type', 'unknown'),
+                    "start_line": metadata.get('start_line', 0),
+                    "end_line": metadata.get('end_line', 0)
                 }
-            }
-            chunks.append(chunk)
+                file_chunks.append(chunk)
         
-        return chunks
+        log_to_sublog(project_config.project_dir, "debug_tools.log", 
+                     f"Found {len(file_chunks)} chunks for file: {file_path}")
+        
+        # Sort by chunk index
+        file_chunks.sort(key=lambda x: x.get('chunk_index', 0))
+        
+        return file_chunks
         
     except Exception as e:
-        log_to_sublog(project_config.project_dir, "debug_tools.log", f"Error analyzing file chunks for {file_path}: {e}")
+        log_to_sublog(project_config.project_dir, "debug_tools.log", 
+                     f"Error analyzing file chunks for {file_path}: {e}")
         return []
+
+def analyze_anchor_quality_from_metadata(metadatas):
+    """Analyze anchor quality from metadata."""
+    st.write("**🔍 Anchor Quality Analysis**")
+    
+    # Count chunks with different types of anchors
+    anchor_counts = {
+        "screen_name": 0,
+        "class_names": 0,
+        "function_names": 0,
+        "component_name": 0,
+        "no_anchors": 0
+    }
+    
+    for metadata in metadatas:
+        if metadata:
+            has_anchors = False
+            for anchor_type in ["screen_name", "class_names", "function_names", "component_name"]:
+                if metadata.get(anchor_type):
+                    anchor_counts[anchor_type] += 1
+                    has_anchors = True
+            
+            if not has_anchors:
+                anchor_counts["no_anchors"] += 1
+    
+    # Display anchor statistics
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Anchor Distribution:**")
+        for anchor_type, count in anchor_counts.items():
+            st.write(f"  • {anchor_type}: {count}")
+    
+    with col2:
+        st.write("**Quality Metrics:**")
+        total_chunks = len(metadatas)
+        if total_chunks > 0:
+            anchored_chunks = total_chunks - anchor_counts["no_anchors"]
+            anchor_coverage = (anchored_chunks / total_chunks) * 100
+            st.write(f"  • Anchor coverage: {anchor_coverage:.1f}%")
+            st.write(f"  • Anchored chunks: {anchored_chunks}/{total_chunks}")
 
 def analyze_chunk_distribution(hierarchy):
     """Analyze how chunks are distributed across files."""
@@ -112,255 +239,84 @@ def analyze_chunk_distribution(hierarchy):
             file_types[ext]["total_chunks"] += chunk_count
     
     if chunk_counts:
-        total_chunks = sum(chunk_counts)
-        avg_chunks = total_chunks / len(chunk_counts)
+        avg_chunks = sum(chunk_counts) / len(chunk_counts)
         max_chunks = max(chunk_counts)
         min_chunks = min(chunk_counts)
         
-        st.metric("Total chunks", total_chunks)
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Average per file", f"{avg_chunks:.1f}")
-        with col2:
-            st.metric("Maximum per file", max_chunks)
-        with col3:
-            st.metric("Minimum per file", min_chunks)
-        
-        # Show distribution by file type
-        st.write("**Chunks by file type:**")
-        for ext, data in sorted(file_types.items(), key=lambda x: x[1]["total_chunks"], reverse=True):
-            avg_per_file = data["total_chunks"] / data["files"] if data["files"] > 0 else 0
-            st.write(f"  • {ext or '[no extension]'}: {data['total_chunks']} chunks in {data['files']} files (avg: {avg_per_file:.1f})")
-
-def analyze_anchor_quality(hierarchy, project_config):
-    """Analyze semantic anchor quality across chunks."""
-    st.write("**🔗 Semantic Anchor Quality Analysis**")
+        st.write(f"**Statistics:**")
+        st.write(f"  • Average chunks per file: {avg_chunks:.1f}")
+        st.write(f"  • Max chunks in a file: {max_chunks}")
+        st.write(f"  • Min chunks in a file: {min_chunks}")
+        st.write(f"  • Total files: {len(chunk_counts)}")
     
-    file_level = hierarchy.get("file_level", {})
-    
-    anchor_stats = {
-        "files_with_classes": 0,
-        "files_with_functions": 0,
-        "files_with_screens": 0,
-        "files_with_components": 0,
-        "files_without_anchors": 0,
-        "total_files": 0
-    }
-    
-    problematic_files = []
-    
-    for file_path, file_data in file_level.items():
-        if isinstance(file_data, dict):
-            anchor_stats["total_files"] += 1
-            
-            has_anchor = False
-            if file_data.get("class_names"):
-                anchor_stats["files_with_classes"] += 1
-                has_anchor = True
-            if file_data.get("function_names"):
-                anchor_stats["files_with_functions"] += 1
-                has_anchor = True
-            if file_data.get("screen_names"):
-                anchor_stats["files_with_screens"] += 1
-                has_anchor = True
-            if file_data.get("component_names"):
-                anchor_stats["files_with_components"] += 1
-                has_anchor = True
-            
-            if not has_anchor:
-                anchor_stats["files_without_anchors"] += 1
-                problematic_files.append({
-                    "file": file_path,
-                    "chunks": file_data.get("chunk_count", 0),
-                    "type": os.path.splitext(file_path)[1]
-                })
-    
-    total_files = anchor_stats["total_files"]
-    if total_files > 0:
-        # Display anchor statistics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Files with classes", f"{anchor_stats['files_with_classes']} ({anchor_stats['files_with_classes']/total_files*100:.1f}%)")
-            st.metric("Files with functions", f"{anchor_stats['files_with_functions']} ({anchor_stats['files_with_functions']/total_files*100:.1f}%)")
-        with col2:
-            st.metric("Files with screens", f"{anchor_stats['files_with_screens']} ({anchor_stats['files_with_screens']/total_files*100:.1f}%)")
-            st.metric("Files without anchors", f"{anchor_stats['files_without_anchors']} ({anchor_stats['files_without_anchors']/total_files*100:.1f}%)")
-        
-        # Show problematic files
-        if problematic_files:
-            st.write("**🚨 Files without semantic anchors:**")
-            st.write(f"These {len(problematic_files)} files may have poor retrieval quality:")
-            
-            for file_info in problematic_files[:10]:  # Show top 10
-                st.write(f"  • {file_info['file']} ({file_info['chunks']} chunks, {file_info['type']})")
-            
-            if len(problematic_files) > 10:
-                st.write(f"  ... and {len(problematic_files) - 10} more files")
-    
-    # Log anchor quality results
-    anchor_quality_pct = (total_files - anchor_stats['files_without_anchors']) / total_files * 100 if total_files > 0 else 0
-    log_to_sublog(project_config.get_project_dir(), "chunk_analysis.log", 
-                  f"Anchor quality: {anchor_quality_pct:.1f}% ({anchor_stats['files_without_anchors']}/{total_files} files without anchors)")
+    if file_types:
+        st.write(f"**Distribution by file type:**")
+        for ext, info in file_types.items():
+            st.write(f"  • {ext}: {info['files']} files, {info['total_chunks']} chunks")
 
 def analyze_file_coverage(hierarchy, project_config):
-    """Analyze which files are covered vs missing from the index."""
+    """Analyze file coverage and identify missing files."""
     st.write("**📁 File Coverage Analysis**")
     
+    # Get all files in project
+    all_files = set()
+    extensions = project_config.get_extensions()
+    
+    for root, dirs, files in os.walk(project_config.project_dir):
+        if 'codebase-qa' in dirs:
+            dirs.remove('codebase-qa')
+        
+        for filename in files:
+            if any(filename.endswith(ext) for ext in extensions):
+                rel_path = os.path.relpath(os.path.join(root, filename), project_config.project_dir)
+                all_files.add(rel_path)
+    
+    # Get files in hierarchy
     file_level = hierarchy.get("file_level", {})
     indexed_files = set(file_level.keys())
     
-    # Get all project files that should be indexed
-    project_dir = project_config.get_project_dir()
-    extensions = project_config.get_extensions()
-    
-    all_project_files = set()
-    for root, dirs, files in os.walk(project_dir):
-        # Skip the database directories
-        dirs[:] = [d for d in dirs if not d.startswith("codebase-qa_db")]
-        
-        for file in files:
-            if file.endswith(extensions):
-                file_path = os.path.join(root, file)
-                rel_path = os.path.relpath(file_path, project_dir)
-                all_project_files.add(rel_path)
-    
-    # Convert indexed files to relative paths for comparison
-    indexed_rel_files = set()
-    for file_path in indexed_files:
-        if os.path.isabs(file_path):
-            indexed_rel_files.add(os.path.relpath(file_path, project_dir))
-        else:
-            indexed_rel_files.add(file_path)
-    
     # Calculate coverage
-    missing_files = all_project_files - indexed_rel_files
-    extra_files = indexed_rel_files - all_project_files
+    covered_files = all_files.intersection(indexed_files)
+    missing_files = all_files - indexed_files
     
-    total_expected = len(all_project_files)
-    total_indexed = len(indexed_rel_files)
-    coverage_pct = (total_indexed / total_expected * 100) if total_expected > 0 else 0
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Expected files", total_expected)
-    with col2:
-        st.metric("Indexed files", total_indexed)
-    with col3:
-        st.metric("Coverage", f"{coverage_pct:.1f}%")
+    st.write(f"**Coverage Statistics:**")
+    st.write(f"  • Total project files: {len(all_files)}")
+    st.write(f"  • Indexed files: {len(indexed_files)}")
+    st.write(f"  • Coverage: {(len(covered_files) / len(all_files) * 100):.1f}%")
+    st.write(f"  • Missing files: {len(missing_files)}")
     
     if missing_files:
-        st.warning(f"⚠️ {len(missing_files)} files not indexed:")
-        for file in sorted(list(missing_files)[:5]):
-            st.write(f"  • Missing: {file}")
-        if len(missing_files) > 5:
-            st.write(f"  ... and {len(missing_files) - 5} more")
-    
-    if extra_files:
-        st.info(f"ℹ️ {len(extra_files)} extra files in index (possibly moved/deleted):")
-        for file in sorted(list(extra_files)[:5]):
-            st.write(f"  • Extra: {file}")
-        if len(extra_files) > 5:
-            st.write(f"  ... and {len(extra_files) - 5} more")
-    
-    if coverage_pct < 90:
-        st.error("❌ Low file coverage detected. Consider rebuilding the index.")
-    elif coverage_pct < 95:
-        st.warning("⚠️ Some files missing from index. Partial rebuild may be needed.")
-    else:
-        st.success("✅ Good file coverage.")
+        st.write(f"**Missing files (first 10):**")
+        for file_path in sorted(list(missing_files))[:10]:
+            st.write(f"  • {file_path}")
 
 def analyze_retrieval_patterns(retriever, project_config):
-    """Analyze retrieval patterns with sample queries."""
-    st.write("**🎯 Retrieval Pattern Analysis**")
+    """Analyze retrieval patterns and performance."""
+    st.write("**🔍 Retrieval Pattern Analysis**")
     
-    # Test different query patterns
-    query_patterns = [
-        ("MainActivity", "Direct class name"),
-        ("button click handler", "Behavioral description"),
-        ("navigation between screens", "Process description"),
-        ("RecyclerView adapter", "Component + pattern"),
-        ("Fragment lifecycle", "Lifecycle concept")
+    if not retriever:
+        st.warning("No retriever available for analysis")
+        return
+    
+    # Test queries to analyze retrieval patterns
+    test_queries = [
+        "MainActivity",
+        "onCreate",
+        "Fragment",
+        "Button",
+        "RecyclerView"
     ]
     
-    pattern_results = []
+    st.write(f"**Testing retrieval with {len(test_queries)} queries:**")
     
-    for query, pattern_type in query_patterns:
+    for query in test_queries:
         try:
             docs = retriever.get_relevant_documents(query, k=3)
             
-            result = {
-                "query": query,
-                "type": pattern_type,
-                "retrieved_count": len(docs),
-                "has_anchors": False,
-                "relevance_score": 0
-            }
+            sources = [doc.metadata.get('source', 'Unknown') for doc in docs]
+            unique_sources = len(set(sources))
             
-            if docs:
-                # Check if top result has anchors
-                top_doc = docs[0]
-                metadata = top_doc.metadata
-                anchors = []
-                for anchor_type in ["class_names", "function_names", "screen_name", "component_name"]:
-                    if metadata.get(anchor_type):
-                        anchors.append(anchor_type)
-                
-                result["has_anchors"] = len(anchors) > 0
-                result["anchor_types"] = anchors
-                
-                # Simple relevance check (query terms in content)
-                query_terms = query.lower().split()
-                content = top_doc.page_content.lower()
-                matching_terms = sum(1 for term in query_terms if term in content)
-                result["relevance_score"] = matching_terms / len(query_terms)
-            
-            pattern_results.append(result)
+            st.write(f"  • **{query}**: {len(docs)} results, {unique_sources} unique files")
             
         except Exception as e:
-            st.error(f"Error testing '{query}': {e}")
-    
-    # Display results
-    if pattern_results:
-        st.write("**Query pattern performance:**")
-        
-        for result in pattern_results:
-            with st.expander(f"🔍 {result['query']} ({result['type']})"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Documents", result['retrieved_count'])
-                with col2:
-                    st.metric("Has anchors", "✅" if result['has_anchors'] else "❌")
-                with col3:
-                    st.metric("Relevance", f"{result['relevance_score']:.0%}")
-                
-                if result.get('anchor_types'):
-                    st.write(f"Anchor types: {', '.join(result['anchor_types'])}")
-        
-        # Summary
-        avg_retrieval = sum(r['retrieved_count'] for r in pattern_results) / len(pattern_results)
-        anchor_rate = sum(1 for r in pattern_results if r['has_anchors']) / len(pattern_results)
-        avg_relevance = sum(r['relevance_score'] for r in pattern_results) / len(pattern_results)
-        
-        st.write("**Overall retrieval performance:**")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Avg documents retrieved", f"{avg_retrieval:.1f}")
-        with col2:
-            st.metric("Queries with anchors", f"{anchor_rate:.0%}")
-        with col3:
-            st.metric("Avg relevance score", f"{avg_relevance:.0%}")
-        
-        if anchor_rate < 0.7:
-            st.warning("⚠️ Low anchor coverage in retrieval results")
-        if avg_relevance < 0.5:
-            st.warning("⚠️ Low relevance scores detected")
-    
-    log_to_sublog(project_config.get_project_dir(), "retrieval_patterns.log", 
-                  f"Retrieval pattern analysis completed for {len(query_patterns)} patterns")
-
-# --------------- CODE CHANGE SUMMARY ---------------
-# ADDED
-# - analyze_file_chunks(): New function for analyzing chunks of a specific file.
-# - Returns structured chunk data with content and metadata for UI display.
-# - Proper error handling and logging for file-specific chunk analysis.
-# - Integration with hierarchical index for detailed chunk information.
+            st.write(f"  • **{query}**: Error - {e}")
