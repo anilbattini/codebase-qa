@@ -1,286 +1,409 @@
-# RAG Pipeline Debug Tools
+# Debug Tools
 
-Comprehensive debugging tools for analyzing each step of the RAG pipeline, including chunking, metadata extraction, retrieval performance, and ranking.
+This directory contains comprehensive debugging and testing tools for the RAG system, designed to help developers understand, test, and troubleshoot the codebase QA tool.
 
-## 🛠️ Available Tools
+## 🎯 Overview
 
-### 1. Database Inspector (`db_inspector.py`)
-Comprehensive SQLite database analysis for Chroma vector database.
+The debug tools provide a complete testing and debugging ecosystem for the RAG codebase QA tool. They include:
 
-**Features:**
-- Database overview and statistics
-- Chunking quality analysis
-- Metadata completeness analysis
-- Retrieval performance analysis
-- Semantic analysis
-- File processing statistics
+- **Core Debug Tools**: UI wrappers around core functionality for inspection
+- **Comprehensive Test Suites**: End-to-end testing of all functionality
+- **Quality Assurance**: Performance and accuracy testing
+- **Real-time Logging**: Detailed logging for troubleshooting
 
-**Usage:**
+## 🔧 Core Debug Tools
+
+### `debug_tools.py`
+Main debug tools class that provides comprehensive debugging functionality:
+- **Vector Database Inspection**: Analyze database statistics and content
+- **Chunk Analysis**: Examine chunk quality and distribution
+- **Retrieval Testing**: Test retrieval quality and performance
+- **Configuration Debugging**: Verify system configuration
+- **Session State Management**: Uses actual core methods from session state
+
+**Key Principle**: Debug tools are UI wrappers around core functionality, not recreators.
+
 ```python
-from debug_tools import ChromaDBInspector
+from debug_tools import DebugTools
 
-# Analyze database
-inspector = ChromaDBInspector("path/to/chroma.sqlite3")
-report = inspector.generate_debug_report()
-print_debug_report(report)
+# Create debug tools instance
+debug_tools = DebugTools(project_config, ollama_model, ollama_endpoint, project_dir)
+
+# Use debug tools
+files = debug_tools.get_available_files()
+results = debug_tools.test_retrieval("MainActivity")
 ```
 
-### 2. Query Runner (`query_runner.py`)
-Executes specific debug queries and provides formatted output.
+### `chunk_analyzer.py`
+Chunk analysis tools for debugging semantic chunking:
+- **Analyze Chunk Quality**: Examine chunk distribution and metadata
+- **File-Specific Analysis**: Analyze chunks for specific files
+- **Metadata Inspection**: Review extracted metadata quality
+- **Uses Actual Retriever**: Uses retriever from session state
 
-**Features:**
-- Quick analysis for common issues
-- Specific debugging for chunking, metadata, retrieval, performance
-- Custom query execution
-- Formatted output
+### `retrieval_tester.py`
+Interactive retrieval testing tools:
+- **Single Query Testing**: Test individual queries
+- **Multiple Query Testing**: Test multiple queries simultaneously
+- **Query Comparison**: Compare different query results
+- **Performance Metrics**: Measure retrieval speed and accuracy
 
-**Usage:**
-```python
-from debug_tools import run_debug_analysis, print_quick_analysis
+### `db_inspector.py`
+Database inspection and analysis tools:
+- **Vector Database Statistics**: Comprehensive database analysis
+- **File Distribution Analysis**: Analyze file processing patterns
+- **Database Health Checks**: Verify database integrity
+- **Performance Metrics**: Database performance analysis
 
-# Quick analysis
-results = run_debug_analysis("path/to/chroma.sqlite3", "quick")
-print_quick_analysis(results)
+### `query_runner.py`
+Query execution and analysis tools:
+- **Predefined Queries**: Execute common debug queries
+- **Query Analysis**: Analyze query results and performance
+- **Custom Queries**: Run custom debug queries
+- **Performance Metrics**: Query execution metrics
 
-# Specific analysis
-results = run_debug_analysis("path/to/chroma.sqlite3", "chunking")
-```
+### `vector_db_inspector.py`
+Vector database specific inspection tools:
+- **Chroma Database Analysis**: Detailed Chroma database inspection
+- **Embedding Model Compatibility**: Check embedding model compatibility
+- **Database Structure Inspection**: Analyze database structure
+- **Collection Analysis**: Examine database collections
 
-### 3. SQL Query Collection (`rag_debug_queries.sql`)
-Comprehensive collection of SQL queries for debugging each step.
+## 🧪 Test Suites
 
-**Categories:**
-1. **Database Overview Queries** - Basic database information
-2. **Chunking Quality Analysis** - Chunk length distribution, file-level analysis
-3. **Metadata Quality Analysis** - Metadata completeness, semantic anchors
-4. **Semantic Analysis** - Business logic, UI elements, dependencies
-5. **Retrieval Performance Analysis** - Embedding statistics, distance distribution
-6. **File Processing Statistics** - File extensions, top files by chunk count
-7. **Debugging Specific Issues** - Missing metadata, very short/long chunks
-8. **Performance Analysis** - Database size, index analysis
-9. **Custom Debug Queries** - Pattern matching, duplicate detection
-10. **Export Queries** - For external analysis
+### `ai_debug_tools/developer_test_suite.py`
+**Complete End-to-End Testing Suite**
 
-## 🔍 Debug Categories
+This is the main test suite that developers should run to verify all functionalities:
 
-### 1. Chunking Quality Analysis
-**Issues to detect:**
-- Very short chunks (<50 chars) - may indicate poor chunking
-- Very long chunks (>3000 chars) - may be too large for effective retrieval
-- Uneven chunk distribution across files
-- Missing chunk types
-
-**Key queries:**
-```sql
--- Chunk length distribution
-SELECT 
-    CASE 
-        WHEN LENGTH(content) < 100 THEN 'Very Short (<100)'
-        WHEN LENGTH(content) < 500 THEN 'Short (100-500)'
-        WHEN LENGTH(content) < 1000 THEN 'Medium (500-1000)'
-        WHEN LENGTH(content) < 2000 THEN 'Long (1000-2000)'
-        ELSE 'Very Long (>2000)'
-    END as length_category,
-    COUNT(*) as chunk_count
-FROM embeddings
-GROUP BY length_category
-ORDER BY chunk_count DESC;
-
--- File-level chunk distribution
-SELECT 
-    metadata->>'$.source' as file_path,
-    COUNT(*) as chunk_count,
-    AVG(LENGTH(content)) as avg_chunk_length
-FROM embeddings
-GROUP BY metadata->>'$.source'
-ORDER BY chunk_count DESC
-LIMIT 10;
-```
-
-### 2. Metadata Quality Analysis
-**Issues to detect:**
-- Missing semantic anchors
-- Incomplete metadata fields
-- Poor class/function extraction
-- Missing business logic indicators
-
-**Key queries:**
-```sql
--- Metadata completeness
-SELECT 
-    COUNT(*) as total_chunks,
-    SUM(CASE WHEN metadata->>'$.has_semantic_anchors' = 'true' THEN 1 ELSE 0 END) as chunks_with_anchors,
-    SUM(CASE WHEN metadata->>'$.class_names' IS NOT NULL THEN 1 ELSE 0 END) as chunks_with_class_names,
-    SUM(CASE WHEN metadata->>'$.function_names' IS NOT NULL THEN 1 ELSE 0 END) as chunks_with_function_names
-FROM embeddings;
-
--- Find chunks without semantic anchors
-SELECT 
-    id,
-    metadata->>'$.source' as source,
-    metadata->>'$.type' as chunk_type,
-    LENGTH(content) as content_length
-FROM embeddings
-WHERE metadata->>'$.has_semantic_anchors' = 'false'
-ORDER BY LENGTH(content) DESC
-LIMIT 10;
-```
-
-### 3. Retrieval Performance Analysis
-**Issues to detect:**
-- Embedding size inconsistencies
-- Distance distribution problems
-- Poor retrieval quality
-
-**Key queries:**
-```sql
--- Embedding statistics
-SELECT 
-    COUNT(*) as total_embeddings,
-    AVG(LENGTH(embedding)) as avg_embedding_size,
-    MIN(LENGTH(embedding)) as min_embedding_size,
-    MAX(LENGTH(embedding)) as max_embedding_size
-FROM embeddings;
-
--- Sample embeddings for analysis
-SELECT 
-    id,
-    metadata->>'$.source' as source,
-    LENGTH(embedding) as embedding_size,
-    metadata->>'$.type' as chunk_type
-FROM embeddings
-ORDER BY RANDOM()
-LIMIT 10;
-```
-
-### 4. File Processing Statistics
-**Issues to detect:**
-- Uneven file processing
-- Missing file types
-- Processing errors
-
-**Key queries:**
-```sql
--- File extension distribution
-SELECT 
-    SUBSTR(metadata->>'$.source', -4) as file_extension,
-    COUNT(*) as chunk_count,
-    COUNT(DISTINCT metadata->>'$.source') as file_count
-FROM embeddings
-WHERE metadata->>'$.source' IS NOT NULL
-GROUP BY SUBSTR(metadata->>'$.source', -4)
-ORDER BY chunk_count DESC;
-
--- Top files by chunk count
-SELECT 
-    metadata->>'$.source' as file_path,
-    COUNT(*) as chunk_count,
-    AVG(LENGTH(content)) as avg_chunk_length
-FROM embeddings
-WHERE metadata->>'$.source' IS NOT NULL
-GROUP BY metadata->>'$.source'
-ORDER BY chunk_count DESC
-LIMIT 15;
-```
-
-## 🚀 Usage Examples
-
-### Quick Analysis
 ```bash
-# Run quick analysis
-python debug_tools/query_runner.py path/to/chroma.sqlite3 quick
-
-# Run specific analysis
-python debug_tools/query_runner.py path/to/chroma.sqlite3 chunking
-python debug_tools/query_runner.py path/to/chroma.sqlite3 metadata
-python debug_tools/query_runner.py path/to/chroma.sqlite3 retrieval
-python debug_tools/query_runner.py path/to/chroma.sqlite3 performance
+cd debug_tools/ai_debug_tools
+python developer_test_suite.py
 ```
 
-### Database Inspector
+**Test Coverage**:
+- ✅ **Project Setup**: Configuration and validation
+- ✅ **Ollama Connectivity**: Model availability and connection
+- ✅ **Embedding Dimension Fix**: Consistent embedding models (768 vs 4096 dimensions)
+- ✅ **RAG Building**: Index creation and management
+- ✅ **Query Processing**: Chat functionality with satisfaction scoring
+- ✅ **UI Functionality**: Complete UI testing including rebuild index
+
+**Features**:
+- **Comprehensive Logging**: Detailed logs for all operations
+- **Real-world Testing**: Tests actual rebuild scenarios and UI interactions
+- **Performance Metrics**: Measures build time, retrieval speed, satisfaction scores
+- **Error Handling**: Robust error detection and reporting
+- **Detailed Reports**: Generates comprehensive test reports
+
+## 🚀 Production Deployment
+
+**⚠️ CRITICAL: Before shipping to production, always run both test suites:**
+
 ```bash
-# Run comprehensive analysis
-python debug_tools/db_inspector.py path/to/chroma.sqlite3
+# 1. Run comprehensive test suite
+python developer_test_suite.py
+
+# 2. Run quality assurance tests  
+python quality_test_suite.py
+
+# 3. Verify all tests pass (100% success rate required)
 ```
 
-### Custom Queries
+**Why this is essential:**
+- ✅ Catches breaking changes before they reach production
+- ✅ Validates model compatibility (embedding dimensions, Ollama connectivity)
+- ✅ Tests UI functionality (rebuild, debug tools, chat)
+- ✅ Ensures quality (query processing, context building)
+- ✅ Validates centralized configuration (model settings)
+
+**Never deploy with failing tests!**
+
+### `ai_debug_tools/test_core_integration.py`
+**Debug Tools Integration Testing**
+
+Tests that debug tools work correctly with core functionality:
+
+```bash
+python test_core_integration.py
+```
+
+**Test Coverage**:
+- ✅ **Core Integration**: Imports and configuration
+- ✅ **Git Tracking**: File reading from git_tracking.json
+- ✅ **Chunk Analyzer**: Chunk analysis functionality
+- ✅ **Retrieval Tester**: Retrieval testing functionality
+- ✅ **DebugTools Class**: DebugTools class functionality
+- ✅ **Error Handling**: Edge cases and error scenarios
+
+### `ai_debug_tools/quality_test_suite.py`
+**Quality and Performance Testing**
+
+Tests RAG system quality and performance:
+
+```bash
+python quality_test_suite.py
+```
+
+**Test Coverage**:
+- ✅ **Answer Relevance**: Tests answer quality and relevance
+- ✅ **Query Processing**: Tests query processing quality
+- ✅ **Response Accuracy**: Measures response accuracy
+- ✅ **Performance Metrics**: Tests system performance
+
+### `ai_debug_tools/embedding_dimension_test.py`
+**Embedding Model Testing**
+
+Tests embedding model compatibility and dimension consistency:
+
+```bash
+python embedding_dimension_test.py
+```
+
+**Test Coverage**:
+- ✅ **Dimension Compatibility**: Tests embedding dimension consistency
+- ✅ **Model Switching**: Tests model switching functionality
+- ✅ **Embedding Quality**: Tests embedding quality analysis
+
+## 🧪 Testing
+
+### 🚀 Production Testing (Before Shipping)
+
+**⚠️ CRITICAL: Run these 3 test files before any production deployment:**
+
+#### 1. Primary Test Suite
+```bash
+cd debug_tools/ai_debug_tools
+python developer_test_suite.py
+```
+**Covers:** Complete end-to-end testing (Project Setup, Ollama, Embedding, RAG, Query, UI)
+
+#### 2. Quality Assurance Test
+```bash
+python quality_test_suite.py
+```
+**Covers:** Quality assurance and performance testing with specific questions
+
+#### 3. Debug Tools Integration Test
+```bash
+python test_core_integration.py
+```
+**Covers:** Debug tools integration validation with core modules
+
+### 📊 Test Files Internal Coverage
+
+#### `developer_test_suite.py` (Primary Umbrella)
+**Internal calls:**
+```
+├── test_runner.py          # Test execution, reporting, result management
+├── test_suite.py           # Core test implementations (5 tests: setup, ollama, embedding, rag, query)
+├── ui_tests.py             # UI functionality tests (rebuild, debug tools, chat, session)
+├── test_helpers.py         # Common utilities (TestConfig, MockSessionState, MockLogPlaceholder)
+├── embedding_dimension_test.py  # Embedding dimension diagnostics and fixes
+└── quality_test_suite.py   # Quality testing (embedding, rag, question quality)
+```
+
+#### `quality_test_suite.py` (Secondary Umbrella)
+**Internal calls:**
+```
+├── quality_test_suite.py   # Self-contained (embedding compatibility, rag building, question quality)
+└── embedding_dimension_test.py  # Can be called independently for embedding fixes
+```
+
+#### `test_core_integration.py` (Tertiary Standalone)
+**Internal calls:**
+```
+└── test_core_integration.py  # Self-contained (core imports, git tracking, chunk analyzer, retrieval tester, debug tools)
+```
+
+### 📋 One-liner Coverage Summary
+```
+test_runner.py              # Test execution engine and reporting system
+test_suite.py               # Core RAG functionality tests (setup, connectivity, embedding, building, query)
+ui_tests.py                 # UI component testing (rebuild index, debug tools, chat functionality)
+test_helpers.py             # Mock objects and utility functions for testing
+embedding_dimension_test.py # Embedding model compatibility diagnostics and fixes
+quality_test_suite.py       # Quality assurance and performance testing with specific questions
+test_core_integration.py    # Debug tools integration validation with core modules
+```
+
+### 🔍 Additional Testing
+```bash
+# Check logs for debugging
+tail -50 logs/debug_tools.log
+```
+
+## 🚀 Quick Start Guide
+
+## 🔍 Debug Tools Usage
+
+### In the UI
+1. **Enable Debug Mode**: Click the app title 5 times or check "Debug Mode" in sidebar
+2. **Access Debug Tools**: Use the debug tabs in the UI
+3. **Inspect Results**: View detailed analysis and logs
+
+### Programmatically
 ```python
-from debug_tools import QueryRunner
+from debug_tools import DebugTools
+from core.config import ProjectConfig
 
-runner = QueryRunner("path/to/chroma.sqlite3")
-results = runner.run_custom_query("""
-    SELECT 
-        metadata->>'$.source' as file,
-        COUNT(*) as chunks,
-        AVG(LENGTH(content)) as avg_length
-    FROM embeddings
-    WHERE metadata->>'$.source' LIKE '%.kt'
-    GROUP BY metadata->>'$.source'
-    ORDER BY chunks DESC
-    LIMIT 10;
-""")
-print(results)
+# Create debug tools
+project_config = ProjectConfig(project_type="android", project_dir="/path/to/project")
+debug_tools = DebugTools(project_config, model_config.get_ollama_model(), model_config.get_ollama_endpoint(), "/path/to/project")
+
+# Test functionality
+files = debug_tools.get_available_files()
+results = debug_tools.test_retrieval("MainActivity")
+inspection = debug_tools.inspect_vector_db()
 ```
 
-## 🔧 Integration with UI
+## 📊 Logging and Monitoring
 
-The debug tools are integrated into the Streamlit UI when debug mode is enabled:
+### Log Files
+- `logs/debug_tools.log`: Debug tool operations
+- `logs/rag_manager.log`: RAG operations
+- `logs/build_rag.log`: Index building
+- `logs/git_tracking.log`: File tracking
 
-1. **Enable debug mode**: Click the app title 5 times
-2. **Access debug tools**: Check "Debug Mode" in the sidebar
-3. **Use debug tabs**: 
-   - Vector DB Inspector
-   - Chunk Analyzer
-   - Retrieval Tester
-   - Build Status
-   - Logs Viewer
+### Logging Best Practices
+```python
+from logger import log_to_sublog
 
-## 📊 Expected Results
+# Comprehensive logging with clear markers
+log_to_sublog(project_dir, "debug_tools.log", f"=== OPERATION STARTED ===")
+log_to_sublog(project_dir, "debug_tools.log", f"Session state keys: {list(st.session_state.keys())}")
 
-### Good Chunking Quality
-- **Chunk lengths**: Most chunks between 100-2000 characters
-- **Distribution**: Even distribution across files
-- **Types**: Mix of class, function, import, and other chunks
-
-### Good Metadata Quality
-- **Semantic anchors**: >80% of chunks have semantic anchors
-- **Class names**: >70% of chunks have class names
-- **Function names**: >60% of chunks have function names
-- **Business logic**: >50% of chunks have business logic indicators
-
-### Good Retrieval Performance
-- **Embedding consistency**: All embeddings have similar sizes
-- **Distance distribution**: Reasonable distance spread
-- **File coverage**: All relevant files processed
+# Error logging with full context
+log_to_sublog(project_dir, "debug_tools.log", f"=== OPERATION FAILED ===")
+log_to_sublog(project_dir, "debug_tools.log", f"Error type: {type(e)}")
+log_to_sublog(project_dir, "debug_tools.log", f"Error message: {str(e)}")
+```
 
 ## 🐛 Common Issues and Solutions
 
-### Issue: Very Short Chunks
-**Cause**: Poor chunking configuration
-**Solution**: Adjust chunk size parameters in chunker configuration
+### 1. Embedding Dimension Mismatch
+**Error**: `Collection expecting embedding with dimension of 768, got 4096`
 
-### Issue: Missing Semantic Anchors
-**Cause**: Poor metadata extraction
-**Solution**: Improve regex patterns for class/function detection
+**Solution**: Ensure `load_existing_rag_index()` uses same embedding model as `build_rag()`
 
-### Issue: Uneven File Processing
-**Cause**: Gitignore not working properly
-**Solution**: Check gitignore patterns and file filtering
+### 2. Session State Issues
+**Error**: `No retriever available - RAG system not ready`
 
-### Issue: Poor Retrieval Quality
-**Cause**: Embedding issues or poor chunking
-**Solution**: Check embedding model and chunk quality
+**Solution**: Check if `st.session_state.get("retriever")` exists before using
 
-## 📝 Logging
+### 3. Metadata Access Errors
+**Error**: `'str' object has no attribute 'get'`
 
-All debug operations are logged to `debug_tools.log` in the project logs directory for troubleshooting.
+**Solution**: Use safe metadata access:
+```python
+metadata = getattr(doc, 'metadata', {})
+if not isinstance(metadata, dict):
+    metadata = {}
+```
 
-## 🔗 Related Files
+## 🎯 Best Practices
 
-- `rag_debug_queries.sql` - Complete SQL query collection
-- `db_inspector.py` - Database analysis tools
-- `query_runner.py` - Query execution tools
-- `debug_tools.py` - Main debug interface
-- `vector_db_inspector.py` - Vector database inspection
-- `chunk_analyzer.py` - Chunk analysis tools
-- `retrieval_tester.py` - Retrieval testing tools
+### For Developers
+1. **Use Session State**: Access existing objects, don't recreate
+2. **Add Comprehensive Logging**: Log every step for debugging
+3. **Test Incrementally**: Make small changes and test immediately
+4. **Check Logs First**: Always examine logs before making changes
+5. **Use Existing Methods**: Leverage core functionality, don't duplicate
+
+### For Testing
+1. **Run Full Test Suite**: Use `developer_test_suite.py` for comprehensive testing
+2. **Check Logs**: Always examine relevant log files
+3. **Test UI Functionality**: Verify all UI features work correctly
+4. **Validate Rebuild**: Test rebuild index functionality thoroughly
+5. **Monitor Performance**: Track build time and retrieval speed
+
+## 📈 Performance Metrics
+
+### Test Results Example
+```
+📊 FINAL SUMMARY:
+   Total Tests: 6
+   Successful: 6
+   Warnings: 0
+   Failed: 0
+   Success Rate: 100.0%
+   Average Satisfaction: 8.6/10
+   Overall Status: SUCCESS
+```
+
+### Key Metrics
+- **Build Time**: Time to build RAG index
+- **Retrieval Speed**: Time to retrieve relevant documents
+- **Satisfaction Score**: User satisfaction with responses (1-10)
+- **Success Rate**: Percentage of successful operations
+- **Error Rate**: Percentage of failed operations
+
+## 🔧 Advanced Usage
+
+### Custom Debug Queries
+```python
+# Test specific functionality
+results = debug_tools.test_retrieval("MainActivity")
+chunks = debug_tools.analyze_file_chunks("app/src/main/java/com/example/MainActivity.kt")
+inspection = debug_tools.inspect_vector_db()
+```
+
+### Performance Testing
+```python
+# Test retrieval performance
+import time
+start_time = time.time()
+results = debug_tools.test_retrieval("MainActivity")
+end_time = time.time()
+print(f"Retrieval time: {end_time - start_time:.2f}s")
+```
+
+### Error Debugging
+```python
+# Check logs for errors
+import os
+log_file = os.path.join(project_dir, "logs", "debug_tools.log")
+with open(log_file, 'r') as f:
+    logs = f.read()
+    print(logs)
+```
+
+## 📝 File Structure
+
+```
+debug_tools/
+├── debug_tools.py          # Main debug tools class
+├── chunk_analyzer.py       # Chunk analysis tools
+├── retrieval_tester.py     # Retrieval testing tools
+├── db_inspector.py         # Database inspection
+├── query_runner.py         # Query execution
+├── vector_db_inspector.py  # Vector DB inspection
+├── __init__.py            # Package initialization
+├── README.md              # This file
+└── ai_debug_tools/       # Test files
+    ├── developer_test_suite.py      # Main test suite
+    ├── quality_test_suite.py        # Quality tests
+    ├── embedding_dimension_test.py  # Embedding tests
+    ├── run_comprehensive_tests.py   # Test runner
+    └── test_core_integration.py    # Debug tools tests
+```
+
+## 🎉 Success Indicators
+
+### Working System Indicators
+✅ **RAG System Ready**:
+- `st.session_state.get("retriever")` exists
+- `st.session_state.get("qa_chain")` exists
+- No embedding dimension errors
+
+✅ **Debug Tools Working**:
+- Chunk analyzer shows processed files
+- Retrieval tester returns results
+- No `'str' object has no attribute 'get'` errors
+
+✅ **Performance Good**:
+- Fast query responses
+- Accurate retrieval results
+- No dimension mismatches
+
+This comprehensive debug tools documentation should enable developers to effectively test, debug, and improve the RAG codebase QA tool.

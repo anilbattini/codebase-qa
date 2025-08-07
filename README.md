@@ -11,7 +11,7 @@ The tool supports various project types (e.g., Android, iOS, Python, JavaScript/
 This architecture reduces custom code by leveraging established libraries, making it maintainable and performant. It evolved from a more complex 15-file system to a streamlined setup with 2-3 core files, while providing advanced features like hierarchical indexing and query intent classification.
 
 A preview shown with android project chosen:
-<img width="1906" height="850" alt="Screenshot 2025-07-31 at 2 16 13 PM" src="https://github.com/user-attachments/assets/c9341a02-7e9d-4b13-aaf6-ccfe1c7c4c58" />
+<img width="1906" height="850" alt="Screenshot 2025-07-31 at 2 16 13 PM" src="https://github.com/user-attachments/assets/c9341a02-7e9d-4b13-aaf6-ccfe1c7c4c58" />
 
 ## Key Features
 
@@ -21,8 +21,9 @@ A preview shown with android project chosen:
 - **Chat Interface**: Ask questions about your codebase with context-aware responses, including source attribution, impact analysis, and debug tools.
 - **Incremental Updates**: Tracks file changes via Git (if available) or custom hashing, reindexing only modified files for efficiency.
 - **Advanced Retrieval**: Supports query intent classification (e.g., overview, business logic, UI flow), hierarchical indexing, and relevance scoring.
-- **Debugging Tools**: Inspect vector DB, test chunking/embeddings/retrieval, view project structure, and force rebuilds.
+- **Comprehensive Debug Tools**: Inspect vector DB, test chunking/embeddings/retrieval, view project structure, and force rebuilds with detailed logging.
 - **Metadata-Rich Chunks**: Extracts dependencies, API endpoints, business logic indicators, validations, and more for precise context building.
+- **Robust Testing Suite**: Complete end-to-end testing including UI functionality, rebuild index, and debug tools validation.
 
 ## Benefits of the New Architecture
 
@@ -33,9 +34,10 @@ A preview shown with android project chosen:
 - **Incremental Indexing**: Only processes changed files using Git integration or fallback hashing.
 - **Semantic Search**: Relevance scoring and hierarchical indexes for multi-level querying.
 - **Source Attribution**: Tracks and displays exact sources in responses.
-- **Robust Error Handling**: Graceful management of processing errors.
+- **Robust Error Handling**: Graceful management of processing errors with comprehensive logging.
 - **Optimized Performance**: Efficient vector operations and token management.
 - **Easy Maintenance**: Built on actively maintained open-source libraries.
+- **Comprehensive Testing**: Full test suite covering core functionality and UI features.
 
 ## Installation
 
@@ -50,7 +52,6 @@ A preview shown with android project chosen:
     cd codebase-qa
     ```
 
-
 3. **Install Dependencies**:
     ```bash 
     pip install -r requirements.txt
@@ -63,7 +64,7 @@ Start Ollama and pull a model (e.g., `ollama pull llama3`).
 
 1. **Launch the App**:
     ```bash 
-    streamlit run app.py
+    streamlit run main.py
     ```
 
 2. **Configure in the Sidebar**:
@@ -85,32 +86,75 @@ Start Ollama and pull a model (e.g., `ollama pull llama3`).
 
 5. **Debug Mode**:
 - Enable to access tools for inspecting the vector DB, testing chunking, embeddings, retrieval, and more.
+- See [Debug Tools Documentation](debug_tools/README.md) for detailed usage.
+
+## Testing
+
+### Quick Test
+Run the comprehensive test suite to verify all functionality:
+```bash
+cd debug_tools/ai_debug_tools
+python developer_test_suite.py
+```
+
+### Individual Tests
+- **Core Integration**: `python test_core_integration.py`
+- **Quality Tests**: `python quality_test_suite.py`
+- **Embedding Tests**: `python embedding_dimension_test.py`
+
+### Test Coverage
+The test suite covers:
+- ✅ Project setup and validation
+- ✅ Embedding model compatibility
+- ✅ RAG index building
+- ✅ Query processing and answer quality
+- ✅ UI functionality (rebuild index, debug tools, chat)
+- ✅ Comprehensive logging and reporting
 
 ## Project Structure
 
 ```text
 codebase-qa/
-├── app.py                      # Main Streamlit app orchestrator
-├── ui_components.py            # UI rendering components
-├── chat_handler.py             # Chat processing with intent classification
-├── rag_manager.py              # RAG setup and management
-├── build_rag.py                # RAG building, indexing, and dependency extraction
-├── chunker_factory.py          # Semantic-aware chunking
-├── config.py                   # Project configurations and auto-detection
-├── git_hash_tracker.py         # File change tracking (Git or custom)
-├── debug_tools.py              # Debugging utilities
-├── metadata_extractor.py       # Enhanced metadata extraction
-├── query_classifier.py         # Query intent classification
-├── context_builder.py          # Advanced context building for queries
-├── hierarchical_indexer.py     # Multi-level hierarchical indexing
-└── vector_db/                  # Generated vector database (Chroma)
+├── core/                         # Core RAG functionality
+│   ├── build_rag.py              # Main RAG index builder
+│   ├── rag_manager.py            # Session lifecycle management
+│   ├── config.py                 # Project configuration
+│   ├── model_config.py           # Centralized model configuration
+│   ├── chunker_factory.py        # Code chunking strategies
+│   ├── metadata_extractor.py     # Metadata extraction
+│   ├── git_hash_tracker.py       # File change tracking
+│   ├── logger.py                 # Centralized logging
+│   ├── chat_handler.py           # Chat interaction logic
+│   ├── ui_components.py          # Streamlit UI components
+│   ├── process_manager.py        # Process management
+│   ├── query_intent_classifier.py # Query classification
+│   ├── context_builder.py        # Context building
+│   ├── hierarchical_indexer.py   # Hierarchical indexing
+│   └── app.py                    # Application entry point
+├── debug_tools/                  # Debugging and testing tools
+│   ├── debug_tools.py           # Main debug interface
+│   ├── chunk_analyzer.py        # Chunk analysis tools
+│   ├── retrieval_tester.py      # Retrieval testing
+│   ├── db_inspector.py          # Database inspection
+│   ├── query_runner.py          # Query execution
+│   ├── vector_db_inspector.py   # Vector DB analysis
+│   └── ai_debug_tools/          # Test suites
+│       ├── developer_test_suite.py      # Main test suite
+│       ├── quality_test_suite.py        # Quality tests
+│       ├── test_helpers.py              # Test utilities
+│       ├── test_runner.py               # Test execution
+│       ├── test_suite.py                # Core test suite
+│       └── ui_tests.py                  # UI tests
+├── cli.py                        # Command line interface
+├── requirements.txt              # Dependencies
+└── README.md                     # This file
+
 ```
-
-
 
 Generated files include:
 - `code_relationships.json`: Dependency mappings.
 - `git_tracking.json`: File change tracking info.
+- `logs/`: Comprehensive logging for debugging.
 
 ## How It Works
 
@@ -121,15 +165,52 @@ Generated files include:
    - Scans files based on extensions (e.g., `.py` for Python).
    - Chunks content semantically with overlaps and metadata (e.g., dependencies, complexity).
    - Builds hierarchical indexes and stores in Chroma.
+   - Uses consistent embedding models (nomic-embed-text:latest) for dimension compatibility.
+
 3. **Query Processing**:
    - Classifies intent (e.g., overview, impact analysis).
    - Rewrites query, retrieves relevant chunks, builds enhanced context.
    - Passes to local LLM for response generation.
+
 4. **Output**: Displays answer with sources, impacted files, and debug info.
+
+## Debug Tools
+
+The debug tools provide comprehensive inspection and testing capabilities:
+
+- **Chunk Analyzer**: Analyze chunk quality and distribution
+- **Retrieval Tester**: Test retrieval quality and performance
+- **Database Inspector**: Inspect vector database statistics
+- **Query Runner**: Execute predefined debug queries
+- **Vector DB Inspector**: Analyze Chroma database structure
+
+For detailed debug tools usage, see [Debug Tools Documentation](debug_tools/README.md).
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Embedding Dimension Mismatch**: Ensure using same embedding model for building and loading
+2. **Session State Issues**: Check if RAG system is properly initialized
+3. **File Processing Errors**: Verify project directory and file permissions
+
+### Debug Mode
+Enable debug mode in the sidebar to access:
+- Vector database inspection
+- Chunk analysis tools
+- Retrieval testing
+- Build status monitoring
+- Real-time logs
 
 ## Contributing
 
 Contributions are welcome! Please submit pull requests for bug fixes, features, or improvements. Follow standard Python best practices.
+
+### Development Guidelines
+- Use existing core methods from session state
+- Add comprehensive logging to all operations
+- Test thoroughly using the provided test suites
+- Follow the consolidated testing approach
 
 ## License
 
@@ -140,36 +221,10 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Built with Streamlit for the UI.
 - Powered by LangChain for RAG and Ollama for local LLMs.
 - Uses Chroma for vector storage.
-
-
-
-## 🔧 Backlog & Fine-Tuning Tasks
-
-These items focus on enhancing the precision, performance, and observability of context-aware retrieval in the system:
-
-### 📦 Contextual Chunking & Metadata
-- Improve chunking logic to better align with semantic boundaries.
-- Fine-tune metadata extraction to enrich context awareness for downstream retrieval.
-
-### 💬 Query Rewriting & Prompt Caching
-- Rewrite user queries into richer retrieval prompts.
-- Integrate cache-based context to boost relevance of RAG-generated responses.
-
-### 🐞 Debugging UI Enhancements
-- Build a real-time debugging UI.
-- Display live logs for background tasks such as:
-  - Chunk construction
-  - Metadata sanitization
-  - Index updates
-
-### 🧠 Reinforcement Learning & Evaluation
-- Introduce reinforcement learning during chunking and metadata processing.
-- Evaluate effectiveness using a predefined question set.
-- Adjust logic dynamically based on retrieval quality of responses.
+- Comprehensive testing and debugging tools included.
 
 ---
 
-> _Note: All systems are in place—these backlog items are focused on refinement and optimization._
-> _Feel free to make changes and raise PRs_
+> _Note: The system includes comprehensive testing and debugging tools. For detailed testing instructions, see the debug_tools documentation._
 
 
