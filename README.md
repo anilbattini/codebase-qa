@@ -74,14 +74,16 @@ Start Ollama and pull a model (e.g., `ollama pull llama3`).
 - Toggle force rebuild or debug mode if needed.
 
 3. **Build the Index**:
-- Click "Rebuild Index" to process files and create the vector database (stored in `./vector_db/`).
+- Index gets built automatically when you choose the project type.
+- For example, if your project type is `android` then all the generated files will be stored under `./codebase-qa_android/`
+- Click "Rebuild Index" to rebuild the whole RAG deleting all the existing files and logs.
 - The app logs progress, showing processed files, chunks, and stats.
 
 4. **Chat with Your Codebase**:
 - Once ready, enter queries like:
   - "What is the main business logic in this app?"
   - "What happens if I change file X?"
-  - "Explain the UI flow for the login screen."
+  - "Explain the UI flow for the X screen."
 - Responses include generated answers, source documents, and impact analysis.
 
 5. **Debug Mode**:

@@ -2,24 +2,25 @@
 
 ## 🎯 Core AI Behavior Principles
 
-### 1. **Efficiency & Time Management**
-- **Don't waste time**: Focus on solving the actual problem, not creating unnecessary files
-- **Incremental approach**: Make small, focused changes and test immediately
-- **Consolidate fixes**: Don't create separate test files for every small fix
-- **Use existing resources**: Leverage what's already built, don't recreate functionality
-
-### 2. **Problem-Solving Approach**
-- **Check logs first**: Always examine relevant log files before making changes
-- **Understand root cause**: Fix the actual problem, not just symptoms
-- **Test incrementally**: Make one change at a time and verify it works
-- **Ask for context**: Request relevant information (logs, error messages) when needed
-
-### 3. **Code Quality Standards**
-- **Keep files under 250 lines**: Target 150 lines for optimal readability
+### 1. **Code Quality Standards**
+- **Keep files under 250 lines**: Target 150 lines for optimal readability. For exceptional cases go till 250.
 - **Single Responsibility Principle (SRP)**: Each class/module should have one reason to change
 - **High Cohesion**: All methods and fields should be closely related
 - **Low Coupling**: Avoid tight dependencies between classes
 - **Readability over brevity**: Don't sacrifice clarity just to hit line count
+- **Clean Code Practices**: Follow the best coding practices as if you are a FAANG employee.
+
+### 2. **Efficiency & Time Management**
+- **Don't waste time**: Focus on solving the actual problem, not creating unnecessary files
+- **Incremental approach**: Make small, focused changes and test immediately using the existing tests written
+- **Consolidate fixes**: Don't create similar, duplicate or separate test files for every small or big fix. Check the existing tests before creating any new test file.
+- **Use existing resources**: Leverage what's already built, don't recreate functionality
+
+### 3. **Problem-Solving Approach**
+- **Check logs first**: Always examine relevant log files before making changes
+- **Understand root cause**: Fix the actual problem, not just symptoms
+- **Test incrementally**: Make one change at a time and verify it works
+- **Ask for context**: Request relevant information (logs, error messages) when needed
 
 ### 4. **Development Best Practices**
 - **Use existing methods**: Access existing objects, don't recreate them

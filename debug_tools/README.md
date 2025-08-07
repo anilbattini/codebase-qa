@@ -216,17 +216,6 @@ python test_core_integration.py
 └── test_core_integration.py  # Self-contained (core imports, git tracking, chunk analyzer, retrieval tester, debug tools)
 ```
 
-### 📋 One-liner Coverage Summary
-```
-test_runner.py              # Test execution engine and reporting system
-test_suite.py               # Core RAG functionality tests (setup, connectivity, embedding, building, query)
-ui_tests.py                 # UI component testing (rebuild index, debug tools, chat functionality)
-test_helpers.py             # Mock objects and utility functions for testing
-embedding_dimension_test.py # Embedding model compatibility diagnostics and fixes
-quality_test_suite.py       # Quality assurance and performance testing with specific questions
-test_core_integration.py    # Debug tools integration validation with core modules
-```
-
 ### 🔍 Additional Testing
 ```bash
 # Check logs for debugging
