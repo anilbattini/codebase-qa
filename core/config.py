@@ -262,10 +262,11 @@ class ProjectConfig:
     def __init__(self, project_type: str = None, custom_config: Dict = None, project_dir: str = "."):
         self.project_type = project_type or self.auto_detect_project_type(project_dir)
         # Use python config as fallback only if project_type is not "unknown"
-        fallback_config = self.LANGUAGE_CONFIGS["python"] if self.project_type != "unknown" else {}
+        fallback_config = self.LANGUAGE_CONFIGS["android"] if self.project_type != "unknown" else {}
         self.config = custom_config or self.LANGUAGE_CONFIGS.get(self.project_type, fallback_config)
         # Centralized path management
         self.project_dir = os.path.abspath(project_dir) if project_dir else None
+        self.project_dir_name = os.path.basename(project_dir)
         self.db_name = self.DEFAULT_DB_NAME
 
     def auto_detect_project_type(self, project_dir: str = ".") -> str:

@@ -98,7 +98,7 @@ else:
         log_highlight("app.py: RAG index already loaded")
 
 # 4. Chat Interface
-st.title(f"🗣️ Chat with your `{project_config.project_type}` codebase")
+st.title(f"Chat with your `{project_config.project_type}` codebase: {project_config.project_dir_name}")
 ui.render_chat_history()
 
 # Setup chat handler and input form
