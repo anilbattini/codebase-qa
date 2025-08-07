@@ -2,19 +2,21 @@ import os
 import sys
 import streamlit as st
 import json
+import time
+import requests
 from langchain.docstore.document import Document
+from langchain_ollama import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
 
 # Add parent directory to path to import from codebase-qa root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import ProjectConfig
+from model_config import model_config
 from logger import log_highlight, log_to_sublog
-
-# Import debug tools
-from .db_inspector import ChromaDBInspector, inspect_chroma_database, print_debug_report
-from .query_runner import QueryRunner, run_debug_analysis, print_quick_analysis
+from rag_manager import RagManager
 
 class DebugTools:
-    """Debug tools for RAG system inspection and diagnostics."""
+    """Debug tools for RAG system inspection and diagnostics using actual core functionality."""
     
     def __init__(self, project_config, ollama_model, ollama_endpoint, project_dir):
         self.project_config = project_config
@@ -22,35 +24,202 @@ class DebugTools:
         self.ollama_endpoint = ollama_endpoint
         self.project_dir = project_dir
         self.vector_db_dir = project_config.get_db_dir()
+        
+        # Use the latest embedding model configuration
+        self.embedding_model = self._get_optimal_embedding_model()
+        
+        log_to_sublog(self.project_dir, "debug_tools.log", 
+                     f"DebugTools initialized with embedding_model={self.embedding_model}")
+    
+    def _get_optimal_embedding_model(self):
+        """Get the optimal embedding model from centralized configuration."""
+        try:
+            # Use centralized model configuration
+            embedding_model = model_config.get_embedding_model()
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                        f"Using centralized embedding model: {embedding_model}")
+            return embedding_model
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                        f"Error getting embedding model from config, using LLM model: {self.ollama_model}, error: {e}")
+            return self.ollama_model
+    
+
+    
+    def _get_retriever(self):
+        """Get the retriever from session state - use the same one as the main app."""
+        log_to_sublog(self.project_dir, "debug_tools.log", 
+                     f"=== GETTING RETRIEVER FROM SESSION STATE ===")
+        
+        try:
+            # Check if session state exists
+            if not hasattr(st, 'session_state'):
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"❌ No session_state available")
+                return None
+            
+            # Check what's in session state
+            session_keys = list(st.session_state.keys())
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Session state keys: {session_keys}")
+            
+            # Get retriever
+            retriever = st.session_state.get("retriever")
+            
+            if retriever is None:
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"❌ No retriever found in session state")
+                return None
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"✅ Retriever found: {type(retriever)}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Retriever id: {id(retriever)}")
+            
+            return retriever
+            
+        except Exception as e:
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"❌ Error getting retriever from session state: {e}")
+            import traceback
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Traceback: {traceback.format_exc()}")
+            return None
     
     def get_available_files(self):
-        """Get list of files available for analysis from the project directory."""
+        """Get list of files available for analysis from git_tracking.json."""
         try:
-            files = []
-            extensions = self.project_config.get_extensions()
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== GETTING AVAILABLE FILES ===")
             
-            for root, dirs, filenames in os.walk(self.project_dir):
-                # Skip codebase-qa directory
-                if 'codebase-qa' in dirs:
-                    dirs.remove('codebase-qa')
-                
-                for filename in filenames:
-                    if any(filename.endswith(ext) for ext in extensions):
-                        rel_path = os.path.relpath(os.path.join(root, filename), self.project_dir)
-                        files.append(rel_path)
+            # Get the git tracking file path
+            git_tracking_file = os.path.join(self.vector_db_dir, "git_tracking.json")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Git tracking file path: {git_tracking_file}")
             
-            return sorted(files)
+            if not os.path.exists(git_tracking_file):
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"❌ Git tracking file not found: {git_tracking_file}")
+                return []
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"✅ Git tracking file found")
+            
+            # Read the git tracking file to get processed files
+            with open(git_tracking_file, 'r') as f:
+                git_data = json.load(f)
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Git data keys: {list(git_data.keys())[:5]}... (showing first 5)")
+            
+            # Get the list of processed files (they are the keys, not in a "files" subobject)
+            processed_files = list(git_data.keys())
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Total processed files: {len(processed_files)}")
+            
+            # Convert absolute paths to relative paths
+            relative_files = []
+            for abs_path in processed_files:
+                try:
+                    rel_path = os.path.relpath(abs_path, self.project_dir)
+                    relative_files.append(rel_path)
+                except ValueError:
+                    # If the file is not in the project directory, skip it
+                    continue
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"✅ Found {len(relative_files)} processed files for analysis")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"First 5 files: {relative_files[:5]}")
+            return sorted(relative_files)
+            
         except Exception as e:
-            log_to_sublog(self.project_dir, "debug_tools.log", f"Error getting available files: {e}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== GETTING AVAILABLE FILES FAILED ===")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Error type: {type(e)}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Error message: {str(e)}")
+            import traceback
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Traceback: {traceback.format_exc()}")
             return []
     
     def inspect_vector_db(self):
-        """Inspect vector database and return statistics."""
+        """Inspect vector database and return statistics using actual core methods."""
         try:
-            from .vector_db_inspector import inspect_vector_db
-            return inspect_vector_db(self.project_config, None)  # No retriever needed for inspection
+            log_to_sublog(self.project_dir, "debug_tools.log", "=== VECTOR DB INSPECTION STARTED ===")
+            
+            # Use the retriever from session state to get the vectorstore
+            retriever = self._get_retriever()
+            if not retriever:
+                log_to_sublog(self.project_dir, "debug_tools.log", "❌ No retriever available for vector DB inspection")
+                return {"error": "No retriever available - RAG system not ready"}
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", f"✅ Retriever found for vector DB inspection: {type(retriever)}")
+            
+            vectorstore = retriever.vectorstore
+            if not vectorstore:
+                log_to_sublog(self.project_dir, "debug_tools.log", "❌ Could not load vectorstore from retriever")
+                return {"error": "Could not load vectorstore from retriever"}
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", f"✅ Vectorstore found: {type(vectorstore)}")
+            
+            # Get collection info
+            collection = vectorstore._collection
+            log_to_sublog(self.project_dir, "debug_tools.log", f"✅ Collection found: {type(collection)}")
+            
+            try:
+                count = collection.count()
+                log_to_sublog(self.project_dir, "debug_tools.log", f"Collection count: {count}")
+            except Exception as e:
+                log_to_sublog(self.project_dir, "debug_tools.log", f"❌ Error getting collection count: {e}")
+                return {"error": f"Error getting collection count: {e}"}
+            
+            # Get all documents
+            try:
+                results = collection.get()
+                documents = results.get('documents', [])
+                metadatas = results.get('metadatas', [])
+                log_to_sublog(self.project_dir, "debug_tools.log", f"Retrieved {len(documents)} documents, {len(metadatas)} metadatas")
+            except Exception as e:
+                log_to_sublog(self.project_dir, "debug_tools.log", f"❌ Error getting documents from collection: {e}")
+                return {"error": f"Error getting documents from collection: {e}"}
+            
+            # Analyze file distribution
+            file_distribution = {}
+            for metadata in metadatas:
+                if metadata and 'source' in metadata:
+                    source = metadata['source']
+                    file_distribution[source] = file_distribution.get(source, 0) + 1
+            
+            # Get database size
+            db_size = 0
+            if os.path.exists(self.vector_db_dir):
+                for root, dirs, files in os.walk(self.vector_db_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        db_size += os.path.getsize(file_path)
+            
+            result = {
+                "total_documents": count,
+                "unique_files": len(file_distribution),
+                "file_distribution": file_distribution,
+                "database_size_mb": db_size / (1024 * 1024),
+                "embedding_model": self.embedding_model,
+                "database_path": self.vector_db_dir
+            }
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== VECTOR DB INSPECTION COMPLETED: {count} documents, {len(file_distribution)} files ===")
+            return result
+            
         except Exception as e:
-            log_to_sublog(self.project_dir, "debug_tools.log", f"Error inspecting vector DB: {e}")
+            log_to_sublog(self.project_dir, "debug_tools.log", f"=== VECTOR DB INSPECTION FAILED ===")
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error type: {type(e)}")
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Error message: {str(e)}")
+            import traceback
+            log_to_sublog(self.project_dir, "debug_tools.log", f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}
     
     def clear_vector_db(self):
@@ -58,85 +227,253 @@ class DebugTools:
         try:
             import shutil
             if os.path.exists(self.vector_db_dir):
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"Clearing vector DB: {self.vector_db_dir}")
                 shutil.rmtree(self.vector_db_dir)
-                log_to_sublog(self.project_dir, "debug_tools.log", f"Cleared vector DB: {self.vector_db_dir}")
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"Successfully cleared vector DB: {self.vector_db_dir}")
                 return True
-            return False
+            else:
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"Vector DB directory does not exist: {self.vector_db_dir}")
+                return False
         except Exception as e:
             log_to_sublog(self.project_dir, "debug_tools.log", f"Error clearing vector DB: {e}")
             return False
     
     def analyze_file_chunks(self, file_path):
-        """Analyze chunks for a specific file."""
+        """Analyze chunks for a specific file using actual vector database."""
         try:
-            from .chunk_analyzer import analyze_chunks
-            return analyze_chunks(self.project_config, None, file_path)
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== FILE CHUNK ANALYSIS STARTED ===")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"File path: {file_path}")
+            
+            # Use the retriever from session state to get the vectorstore
+            retriever = self._get_retriever()
+            if not retriever:
+                log_to_sublog(self.project_dir, "debug_tools.log", "❌ No retriever available in session state")
+                return []
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", f"✅ Retriever found for file analysis: {type(retriever)}")
+            
+            vectorstore = retriever.vectorstore
+            if not vectorstore:
+                log_to_sublog(self.project_dir, "debug_tools.log", "❌ Could not load vectorstore from retriever")
+                return []
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", f"✅ Vectorstore found for file analysis: {type(vectorstore)}")
+            
+            # Get all documents from the vectorstore
+            collection = vectorstore._collection
+            log_to_sublog(self.project_dir, "debug_tools.log", f"✅ Collection found for file analysis: {type(collection)}")
+            
+            try:
+                results = collection.get()
+                documents = results.get('documents', [])
+                metadatas = results.get('metadatas', [])
+                log_to_sublog(self.project_dir, "debug_tools.log", f"Retrieved {len(documents)} documents, {len(metadatas)} metadatas")
+            except Exception as e:
+                log_to_sublog(self.project_dir, "debug_tools.log", f"❌ Error getting documents from collection: {e}")
+                return []
+            
+            # Filter chunks for the specific file
+            file_chunks = []
+            for i, metadata in enumerate(metadatas):
+                if metadata and metadata.get('source') == file_path:
+                    chunk = {
+                        "content": documents[i] if i < len(documents) else "",
+                        "metadata": metadata,
+                        "chunk_index": metadata.get('chunk_index', i),
+                        "type": metadata.get('type', 'unknown'),
+                        "start_line": metadata.get('start_line', 0),
+                        "end_line": metadata.get('end_line', 0)
+                    }
+                    file_chunks.append(chunk)
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Found {len(file_chunks)} chunks for file: {file_path}")
+            
+            # Sort by chunk index
+            file_chunks.sort(key=lambda x: x.get('chunk_index', 0))
+            
+            return file_chunks
+            
         except Exception as e:
-            log_to_sublog(self.project_dir, "debug_tools.log", f"Error analyzing file chunks: {e}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Error analyzing file chunks for {file_path}: {e}")
             return []
     
     def test_retrieval(self, query):
-        """Test retrieval with a specific query."""
+        """Test retrieval with a specific query using the existing retriever from session state."""
         try:
-            from .retrieval_tester import test_retrieval_results
-            qa_chain = st.session_state.get("qa_chain")
-            return test_retrieval_results(query, None, self.project_config, qa_chain)
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== RETRIEVAL TEST STARTED ===")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Query: {query}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"DebugTools instance: {self}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Project dir: {self.project_dir}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Vector DB dir: {self.vector_db_dir}")
+            
+            # Use the retriever from session state (same as main app)
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Getting retriever from session state...")
+            retriever = self._get_retriever()
+            
+            if not retriever:
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"❌ No retriever available in session state")
+                return {"error": "No retriever available - RAG system not ready"}
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"✅ Retriever found: {type(retriever)}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Retriever attributes: {dir(retriever)}")
+            
+            # Check if retriever has vectorstore attribute
+            if hasattr(retriever, 'vectorstore'):
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"✅ Retriever has vectorstore: {type(retriever.vectorstore)}")
+                vectorstore = retriever.vectorstore
+                
+                if hasattr(vectorstore, '_collection'):
+                    collection = vectorstore._collection
+                    log_to_sublog(self.project_dir, "debug_tools.log", 
+                                 f"✅ Vectorstore has collection: {type(collection)}")
+                    
+                    # Check collection info
+                    try:
+                        count = collection.count()
+                        log_to_sublog(self.project_dir, "debug_tools.log", 
+                                     f"Collection count: {count}")
+                    except Exception as e:
+                        log_to_sublog(self.project_dir, "debug_tools.log", 
+                                     f"❌ Error getting collection count: {e}")
+            else:
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"❌ Retriever has no vectorstore attribute")
+            
+            # Use the actual retriever to get documents
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Calling retriever.get_relevant_documents(query='{query}', k=5)...")
+            docs = retriever.get_relevant_documents(query, k=5)
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Retrieved {len(docs)} documents")
+            
+            if not docs:
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"❌ No documents retrieved")
+                return {"error": "No documents retrieved"}
+            
+            # Process results
+            results = []
+            for i, doc in enumerate(docs, 1):
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"Processing document {i}: {type(doc)}")
+                
+                # Safely get metadata
+                metadata = getattr(doc, 'metadata', {})
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                
+                result = {
+                    "rank": i,
+                    "source": metadata.get("source", "Unknown") if isinstance(metadata, dict) else "Unknown",
+                    "content": getattr(doc, 'page_content', '')[:200] + "..." if len(getattr(doc, 'page_content', '')) > 200 else getattr(doc, 'page_content', ''),
+                    "metadata": metadata,
+                    "relevance_score": metadata.get('score', 'N/A') if isinstance(metadata, dict) else 'N/A'
+                }
+                results.append(result)
+                
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"Result {i}: {result['source']} (score: {result['relevance_score']})")
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== RETRIEVAL TEST COMPLETED SUCCESSFULLY: {len(results)} results ===")
+            return results
+            
         except Exception as e:
-            log_to_sublog(self.project_dir, "debug_tools.log", f"Error testing retrieval: {e}")
-            return []
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"=== RETRIEVAL TEST FAILED ===")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Error type: {type(e)}")
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Error message: {str(e)}")
+            import traceback
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Traceback: {traceback.format_exc()}")
+            return {"error": str(e)}
     
     def test_multiple_queries(self, queries):
         """Test multiple queries and return results."""
         try:
             results = {}
-            for query in queries:
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Testing multiple queries: {len(queries)} queries")
+            
+            for i, query in enumerate(queries, 1):
+                log_to_sublog(self.project_dir, "debug_tools.log", 
+                             f"Testing query {i}/{len(queries)}: {query}")
                 results[query] = self.test_retrieval(query)
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Multiple query testing completed: {len(results)} results")
             return results
         except Exception as e:
             log_to_sublog(self.project_dir, "debug_tools.log", f"Error testing multiple queries: {e}")
             return {}
     
-    def run_database_analysis(self, analysis_type="quick"):
-        """Run database analysis using the new debug tools."""
-        try:
-            chroma_db_path = os.path.join(self.vector_db_dir, "chroma.sqlite3")
-            if not os.path.exists(chroma_db_path):
-                return {"error": f"Chroma database not found at {chroma_db_path}"}
-            
-            return run_debug_analysis(chroma_db_path, analysis_type)
-        except Exception as e:
-            log_to_sublog(self.project_dir, "debug_tools.log", f"Error running database analysis: {e}")
-            return {"error": str(e)}
+
     
     def get_database_debug_report(self):
-        """Get comprehensive database debug report."""
+        """Get comprehensive database debug report using actual core methods."""
         try:
-            chroma_db_path = os.path.join(self.vector_db_dir, "chroma.sqlite3")
-            if not os.path.exists(chroma_db_path):
-                return {"error": f"Chroma database not found at {chroma_db_path}"}
+            log_to_sublog(self.project_dir, "debug_tools.log", "Generating database debug report")
             
-            return inspect_chroma_database(chroma_db_path)
+            # Get vector DB inspection
+            vector_db_info = self.inspect_vector_db()
+            
+            # Get hierarchical index info
+            hierarchy_file = self.project_config.get_hierarchy_file()
+            hierarchy_info = {}
+            if os.path.exists(hierarchy_file):
+                with open(hierarchy_file, 'r') as f:
+                    hierarchy = json.load(f)
+                    hierarchy_info = {
+                        "file_count": len(hierarchy.get("file_level", {})),
+                        "total_chunks": sum(file_data.get("chunk_count", 0) for file_data in hierarchy.get("file_level", {}).values()),
+                        "hierarchy_file_size": os.path.getsize(hierarchy_file)
+                    }
+            
+            # Get git tracking info
+            git_tracking_file = os.path.join(self.vector_db_dir, "git_tracking.json")
+            git_info = {}
+            if os.path.exists(git_tracking_file):
+                with open(git_tracking_file, 'r') as f:
+                    git_data = json.load(f)
+                    git_info = {
+                        "tracked_files": len(git_data.get("files", {})),
+                        "last_commit": git_data.get("last_commit", "unknown")
+                    }
+            
+            report = {
+                "vector_db": vector_db_info,
+                "hierarchy": hierarchy_info,
+                "git_tracking": git_info,
+                "embedding_model": self.embedding_model,
+                "database_path": self.vector_db_dir
+            }
+            
+            log_to_sublog(self.project_dir, "debug_tools.log", 
+                         f"Database debug report generated successfully")
+            return report
+            
         except Exception as e:
             log_to_sublog(self.project_dir, "debug_tools.log", f"Error getting database debug report: {e}")
-            return {"error": str(e)}
-    
-    def run_custom_database_query(self, query):
-        """Run a custom SQL query against the Chroma database."""
-        try:
-            chroma_db_path = os.path.join(self.vector_db_dir, "chroma.sqlite3")
-            if not os.path.exists(chroma_db_path):
-                return {"error": f"Chroma database not found at {chroma_db_path}"}
-            
-            runner = QueryRunner(chroma_db_path)
-            if not runner.connect():
-                return {"error": "Could not connect to database"}
-            
-            try:
-                return runner.run_query(query, "Custom Query")
-            finally:
-                runner.disconnect()
-        except Exception as e:
-            log_to_sublog(self.project_dir, "debug_tools.log", f"Error running custom query: {e}")
             return {"error": str(e)}
     
     def render_debug_interface(self, retriever):
@@ -146,53 +483,160 @@ class DebugTools:
         st.header("🛠️ RAG Debug & Diagnostic Tools")
         st.write("Comprehensive debugging tools for analyzing RAG system performance and quality.")
         
-        # Import the comprehensive tools
-        from .vector_db_inspector import inspect_vector_db, analyze_hierarchical_index, check_retrieval_health
-        from .chunk_analyzer import analyze_chunks
-        from .retrieval_tester import test_retrieval
-        
         # Debug tabs for organized interface
         tabs = st.tabs([
             "🗄️ Vector DB", 
             "🧩 Chunks", 
             "🔍 Retrieval", 
             "🧪 Testing", 
-            "⚙️ Legacy Tools"
+            "⚙️ Configuration"
         ])
         
         with tabs[0]:  # Vector DB Inspector
-            inspect_vector_db(self.project_config, retriever)
-            analyze_hierarchical_index(self.project_config)
-            if retriever:
-                check_retrieval_health(self.project_config, retriever)
+            st.subheader("🗄️ Vector Database Inspector")
+            if st.button("🔍 Inspect Vector DB", type="primary"):
+                with st.spinner("Inspecting vector database..."):
+                    try:
+                        stats = self.inspect_vector_db()
+                        if "error" not in stats:
+                            st.success("✅ Vector DB inspection complete!")
+                            
+                            # Display statistics
+                            st.subheader("📈 Database Statistics")
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.metric("Total Documents", stats.get("total_documents", 0))
+                            with col_b:
+                                st.metric("Unique Files", stats.get("unique_files", 0))
+                            with col_c:
+                                st.metric("Database Size", f"{stats.get('database_size_mb', 0):.2f} MB")
+                            
+                            # Display file breakdown
+                            if "file_distribution" in stats:
+                                st.subheader("📁 File Distribution")
+                                file_data = []
+                                for file_path, count in stats["file_distribution"].items():
+                                    file_data.append({"File": file_path, "Chunks": count})
+                                
+                                if file_data:
+                                    import pandas as pd
+                                    df = pd.DataFrame(file_data)
+                                    st.dataframe(df, use_container_width=True)
+                        else:
+                            st.error(f"❌ Error inspecting vector DB: {stats.get('error')}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error inspecting vector DB: {e}")
+            
+            if st.button("🗑️ Clear Vector DB"):
+                if st.checkbox("I understand this will delete all vector data"):
+                    with st.spinner("Clearing vector database..."):
+                        try:
+                            if self.clear_vector_db():
+                                st.success("✅ Vector database cleared!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Error clearing vector DB")
+                        except Exception as e:
+                            st.error(f"❌ Error clearing vector DB: {e}")
         
         with tabs[1]:  # Chunk Analysis
-            analyze_chunks(self.project_config, retriever)
+            st.subheader("🧩 Chunk Analyzer")
+            
+            # File selector
+            files = self.get_available_files()
+            if files:
+                selected_file = st.selectbox("Select file to analyze:", files)
+                
+                if selected_file and st.button("🔍 Analyze Chunks", type="primary"):
+                    with st.spinner("Analyzing chunks..."):
+                        try:
+                            chunks = self.analyze_file_chunks(selected_file)
+                            
+                            st.subheader(f"📄 Chunks for: {selected_file}")
+                            st.write(f"Found {len(chunks)} chunks")
+                            
+                            # Display chunks
+                            for i, chunk in enumerate(chunks):
+                                with st.expander(f"Chunk {i+1}: {chunk.get('type', 'unknown')} (lines {chunk.get('start_line', 0)}-{chunk.get('end_line', 0)})"):
+                                    st.write("**Content:**")
+                                    st.code(chunk.get('content', '')[:500] + "..." if len(chunk.get('content', '')) > 500 else chunk.get('content', ''))
+                                    
+                                    st.write("**Metadata:**")
+                                    st.json(chunk.get('metadata', {}))
+                        except Exception as e:
+                            st.error(f"❌ Error analyzing chunks: {e}")
+            else:
+                st.warning("No files available for analysis")
         
         with tabs[2]:  # Retrieval Analysis
-            if retriever:
-                st.subheader("🔍 Retriever Diagnostics")
-                retriever_type = type(retriever).__name__
-                st.info(f"Retriever type: {retriever_type}")
-                log_to_sublog(self.project_dir, "debug_tools.log", f"Retriever type: {retriever_type}")
-                
-                if hasattr(retriever, 'vectorstore'):
-                    vectorstore_type = type(retriever.vectorstore).__name__
-                    st.info(f"Vector store: {vectorstore_type}")
-                    log_to_sublog(self.project_dir, "debug_tools.log", f"Vector store: {vectorstore_type}")
-            else:
-                st.warning("⚠️ No retriever available for analysis")
+            st.subheader("🔍 Retrieval Analysis")
+            
+            # Custom query testing
+            test_query = st.text_input("Enter test query:", placeholder="e.g., MainActivity onCreate method")
+            k_docs = st.number_input("Documents to retrieve:", min_value=1, max_value=20, value=5)
+            
+            if test_query and st.button("🔍 Test Retrieval", type="primary"):
+                with st.spinner("Testing retrieval..."):
+                    try:
+                        results = self.test_retrieval(test_query)
+                        if "error" not in results:
+                            st.success(f"✅ Retrieved {len(results)} documents")
+                            
+                            for i, result in enumerate(results):
+                                with st.expander(f"Result {i+1}: {result['source']}"):
+                                    st.write("**Content:**")
+                                    st.write(result['content'])
+                                    st.write("**Score:**", result['relevance_score'])
+                                    st.write("**Metadata:**")
+                                    st.json(result['metadata'])
+                        else:
+                            st.error(f"❌ Retrieval failed: {results.get('error')}")
+                    except Exception as e:
+                        st.error(f"❌ Error testing retrieval: {e}")
         
         with tabs[3]:  # Interactive Testing
-            qa_chain = st.session_state.get("qa_chain")
-            test_retrieval(self.project_config, retriever, qa_chain)
+            st.subheader("🧪 Interactive Testing")
+            
+            # Test embedding compatibility
+            st.write("**Embedding Compatibility Test**")
+            if st.button("Test Embedding Compatibility"):
+                with st.spinner("Testing embedding compatibility..."):
+                    result = self.test_embedding_compatibility()
+                    if result["status"] == "success":
+                        st.success(f"✅ Embedding test successful!")
+                        st.info(f"Model: {result['embedding_model']}")
+                        st.info(f"Dimension: {result['embedding_dimension']}")
+                    else:
+                        st.error(f"❌ Embedding test failed: {result.get('error', 'Unknown error')}")
+            
+            # Test multiple queries
+            st.write("**Multiple Query Test**")
+            test_queries = [
+                "MainActivity class",
+                "onCreate method",
+                "Fragment navigation",
+                "Button click listener"
+            ]
+            
+            if st.button("Run Multiple Query Test"):
+                with st.spinner("Testing multiple queries..."):
+                    results = self.test_multiple_queries(test_queries)
+                    if results:
+                        st.success(f"✅ Tested {len(results)} queries")
+                        for query, result in results.items():
+                            if "error" not in result:
+                                st.info(f"✅ {query}: {len(result)} results")
+                            else:
+                                st.warning(f"⚠️ {query}: {result.get('error')}")
         
-        with tabs[4]:  # Legacy Tools
+        with tabs[4]:  # Configuration
             st.subheader("⚙️ Configuration Debug")
             config_info = {
                 "project_type": self.project_config.project_type,
                 "extensions": self.project_config.get_extensions(),
                 "ollama_model": self.ollama_model,
+                "embedding_model": self.embedding_model,
                 "ollama_endpoint": self.ollama_endpoint,
                 "database_path": self.project_config.get_db_dir(),
                 "logs_path": self.project_config.get_logs_dir()
@@ -200,24 +644,50 @@ class DebugTools:
             st.json(config_info)
             log_to_sublog(self.project_dir, "debug_tools.log", f"Configuration: {config_info}")
             
-            # Show legacy debug interface
-            show_debug_tools(self.project_dir, self.vector_db_dir)
+            # Database debug report
+            st.write("**Database Debug Report**")
+            if st.button("Generate Debug Report"):
+                with st.spinner("Generating debug report..."):
+                    report = self.get_database_debug_report()
+                    if "error" not in report:
+                        st.success("✅ Debug report generated!")
+                        st.json(report)
+                    else:
+                        st.error(f"❌ Error generating debug report: {report.get('error')}")
 
+# Legacy functions for backward compatibility
 def load_documents_from_vector_db(vector_db_dir):
-    """
-    Loads all Document metadata for inspection/debugging.
-    Assumes Chroma/FAISS/etc. stores docs as .jsonl or .json file.
-    """
-    docfile = os.path.join(vector_db_dir, "chroma_docs.json")
-    if os.path.isfile(docfile):
-        with open(docfile, "r") as f:
-            for line in f:
-                yield json.loads(line)
-    else:
-        return []  # Handle alternate vector DBs or throw
+    """Loads all Document metadata for inspection/debugging."""
+    try:
+        from langchain_ollama import OllamaEmbeddings
+        from langchain_community.vectorstores import Chroma
+        
+        embeddings = OllamaEmbeddings(model="nomic-embed-text:latest")
+        vectorstore = Chroma(
+            persist_directory=vector_db_dir,
+            embedding_function=embeddings
+        )
+        
+        collection = vectorstore._collection
+        results = collection.get()
+        documents = results.get('documents', [])
+        metadatas = results.get('metadatas', [])
+        
+        chunks = []
+        for i, metadata in enumerate(metadatas):
+            if metadata:
+                chunks.append({
+                    "content": documents[i] if i < len(documents) else "",
+                    "metadata": metadata
+                })
+        
+        return chunks
+    except Exception as e:
+        print(f"Error loading documents: {e}")
+        return []
 
 def load_hierarchical_index(vector_db_dir):
-    """Loads the project’s hierarchical_index.json if available."""
+    """Loads the project's hierarchical_index.json if available."""
     index_file = os.path.join(vector_db_dir, "hierarchical_index.json")
     if not os.path.isfile(index_file):
         return {}
@@ -228,10 +698,12 @@ def surface_anchorless_chunks(vector_db_dir, required_anchors=None):
     """Returns a list of chunks/documents missing all required anchors."""
     if required_anchors is None:
         required_anchors = ["screen_name", "class_names", "function_names", "component_name"]
-    docs = list(load_documents_from_vector_db(vector_db_dir))
+    
+    chunks = load_documents_from_vector_db(vector_db_dir)
     anchorless = []
-    for d in docs:
-        meta = d.get("metadata", d)  # map to same interface
+    
+    for chunk in chunks:
+        meta = chunk.get("metadata", {})
         if not any(meta.get(anchor) for anchor in required_anchors):
             anchorless.append({
                 "source": meta.get("source", "unknown"),
@@ -239,6 +711,7 @@ def surface_anchorless_chunks(vector_db_dir, required_anchors=None):
                 "summary": meta.get("summary", "")[:80],
                 "anchors": {k: meta.get(k) for k in required_anchors}
             })
+    
     return anchorless
 
 def show_debug_tools(project_dir, vector_db_dir):
@@ -284,30 +757,3 @@ def show_debug_tools(project_dir, vector_db_dir):
         st.write(f"{ext or '[no ext]'}: {count} files")
 
     st.success("RAG debugging complete.")
-
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - Test files from debug_tools directory (test_debug_tools.py, test_vector_db_location.py, test_detection.py, test_git_tracking.py)
-# - Local print/debug log helpers (now all logging via logger.py)
-# - Redundant per-call anchor validation (now in upstream metadata extraction & chunk filtering)
-# ADDED
-# - DebugTools class: Complete implementation with render_debug_interface method.
-# - get_available_files(): Returns list of files available for analysis from project directory.
-# - inspect_vector_db(): Inspects vector database and returns statistics.
-# - clear_vector_db(): Clears the vector database.
-# - analyze_file_chunks(): Analyzes chunks for a specific file.
-# - test_retrieval(): Tests retrieval with a specific query.
-# - test_multiple_queries(): Tests multiple queries and returns results.
-# - analyze_file_chunks(): New function in chunk_analyzer.py for file-specific chunk analysis.
-# - test_retrieval_results(): New function in retrieval_tester.py that returns results instead of just displaying.
-# - surface_anchorless_chunks: explicitly gathers all documents/chunks missing core semantic anchors for user/developer inspection.
-# - Modular helpers for loading documents/hierarchy, previewing missing/weak chunks, and visualizing project structure.
-# - Enhanced logging throughout with log_highlight and log_to_sublog for better debugging.
-# - Retriever diagnostics with detailed type information logging.
-# - Configuration debugging with comprehensive project settings display.
-# - Only logger.py used for highlight/diagnostic logs.
-# REFACTORED
-# - DebugTools class now has all required methods for UI integration.
-# - Fixed function signatures to match UI expectations.
-# - Proper error handling and logging throughout all debug methods.
-# - Clean separation between display functions and data return functions.
