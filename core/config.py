@@ -23,7 +23,7 @@ class ProjectConfig:
 
     LANGUAGE_CONFIGS = {
         "android": {
-            "extensions": (".kt", ".kts", ".java", ".xml", ".gradle", ".properties", ".toml"),
+            "extensions": (".md",".kt", ".kts", ".java", ".xml", ".gradle", ".properties", ".toml"),
             "priority_files": ["activity", "fragment", "manifest", "mainactivity", "service", "viewmodel"],
             "priority_extensions": [".kt", ".java"],
             "secondary_extensions": [".xml"],
@@ -65,7 +65,7 @@ class ProjectConfig:
             "summary_keywords": ["android", "activity", "fragment", "kotlin", "java"]
         },
         "ios": {
-            "extensions": (".swift", ".m", ".h", ".plist", ".storyboard", ".xib"),
+            "extensions": (".md",".swift", ".m", ".h", ".plist", ".storyboard", ".xib"),
             "priority_files": ["AppDelegate", "SceneDelegate", "ViewController"],
             "priority_extensions": [".swift", ".m"],
             "secondary_extensions": [".storyboard", ".xib", ".plist"],
@@ -101,7 +101,7 @@ class ProjectConfig:
             "summary_keywords": ["ios", "swift", "viewcontroller", "apple", "objective-c"]
         },
         "java": {
-            "extensions": (".java", ".xml", ".gradle", ".properties", ".toml", ".jar"),
+            "extensions": (".md",".java", ".xml", ".gradle", ".properties", ".toml", ".jar"),
             "priority_files": ["Main", "App", "Application", "Activity", "Controller", "Service", "Servlet"],
             "priority_extensions": [".java"],
             "secondary_extensions": [".xml"],
@@ -139,7 +139,7 @@ class ProjectConfig:
             "summary_keywords": ["java", "spring", "servlet", "activity", "controller"]
         },
         "javascript": {
-            "extensions": (".js", ".ts", ".jsx", ".tsx", ".json", ".mjs"),
+            "extensions": (".md",".js", ".ts", ".jsx", ".tsx", ".json", ".mjs"),
             "priority_files": ["index", "app", "main", "server"],
             "priority_extensions": [".js", ".ts"],
             "secondary_extensions": [".json"],
@@ -181,7 +181,7 @@ class ProjectConfig:
             "summary_keywords": ["javascript", "typescript", "react", "node", "express"]
         },
         "python": {
-            "extensions": (".py", ".pyx", ".pyi", ".txt", ".md", ".yml", ".yaml"),
+            "extensions": (".md",".py", ".pyx", ".pyi", ".txt", ".md", ".yml", ".yaml"),
             "priority_files": ["main", "app", "__init__", "server", "manage"],
             "priority_extensions": [".py"],
             "secondary_extensions": [".txt", ".md"],
@@ -213,7 +213,7 @@ class ProjectConfig:
             "summary_keywords": ["python", "django", "flask", "fastapi"]
         },
         "web": {
-            "extensions": (".html", ".css", ".scss", ".sass", ".js", ".ts", ".vue", ".svelte"),
+            "extensions": (".md",".html", ".css", ".scss", ".sass", ".js", ".ts", ".vue", ".svelte"),
             "priority_files": ["index", "app", "main"],
             "priority_extensions": [".js", ".ts", ".vue"],
             "secondary_extensions": [".html", ".css"],
