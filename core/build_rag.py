@@ -118,7 +118,7 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     extensions = project_config.get_extensions()
 
     st.info(f"🎯 Detected project type: **{project_config.project_type.upper()}**")
-    st.info(f"📁 Processing extensions: {', '.join(extensions)}")
+    st.info(f"📁 Processing files with extensions: {', '.join(extensions)} of project {project_config.project_dir_name} ")
     log_highlight("Initialized components", logger)
 
     # File tracking/hash check
@@ -168,7 +168,7 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
         )
 
     start_time = time.time()
-    st.info(f"📂 Processing **{len(files_to_process)}** new/updated files...")
+    st.info(f"📂 Processing **{len(files_to_process)}** new/updated files... of project {project_config.project_dir_name}")
     st.info(f"📊 Tracking method: **{tracking_method.upper()}**")
     if tracking_status.get('current_commit'):
         st.info(f"📊 Git commit: `{tracking_status['current_commit'][:8]}`")

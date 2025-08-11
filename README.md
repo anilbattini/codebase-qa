@@ -64,7 +64,7 @@ Start Ollama and pull a model (e.g., `ollama pull llama3`).
 
 1. **Launch the App**:
     ```bash 
-    streamlit run main.py
+    streamlit run core/app.py
     ```
 
 2. **Configure in the Sidebar**:
