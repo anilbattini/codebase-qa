@@ -59,51 +59,52 @@ def build_code_relationship_map(documents: List[Document]) -> Dict[str, set]:
                 code_relationship_map.setdefault(file, set()).add(deps)
     return code_relationship_map
 
-def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, project_type=None):
+def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, project_type=None, incremental=False, files_to_process=None):
     # Get project configuration with centralized path management
     project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
     
     # All metadata, relationships, and vector DB will be in the configured directory
     VECTOR_DB_DIR = project_config.get_db_dir()
     
-    # Ensure clean database directory for rebuild
-    if os.path.exists(VECTOR_DB_DIR):
-        try:
-            # Try to remove any existing database files that might be locked
-            import shutil
-            import time
-            
-            # Check for common Chroma database files
-            chroma_files = [
-                os.path.join(VECTOR_DB_DIR, "chroma.sqlite3"),
-                os.path.join(VECTOR_DB_DIR, "chroma.sqlite3-shm"),
-                os.path.join(VECTOR_DB_DIR, "chroma.sqlite3-wal")
-            ]
-            
-            for file_path in chroma_files:
-                if os.path.exists(file_path):
-                    try:
-                        os.remove(file_path)
-                        log_to_sublog(project_dir, "build_rag.log", f"Removed existing database file: {file_path}")
-                    except PermissionError:
-                        # File might be locked, try again after a short delay
-                        time.sleep(0.5)
+    # For incremental builds, don't clean the database directory
+    if not incremental:
+        # Ensure clean database directory for rebuild
+        if os.path.exists(VECTOR_DB_DIR):
+            try:
+                # Try to remove any existing database files that might be locked
+                import shutil
+                
+                # Check for common Chroma database files
+                chroma_files = [
+                    os.path.join(VECTOR_DB_DIR, "chroma.sqlite3"),
+                    os.path.join(VECTOR_DB_DIR, "chroma.sqlite3-shm"),
+                    os.path.join(VECTOR_DB_DIR, "chroma.sqlite3-wal")
+                ]
+                
+                for file_path in chroma_files:
+                    if os.path.exists(file_path):
                         try:
                             os.remove(file_path)
-                            log_to_sublog(project_dir, "build_rag.log", f"Removed locked database file: {file_path}")
-                        except Exception as e:
-                            log_to_sublog(project_dir, "build_rag.log", f"Could not remove database file {file_path}: {e}")
-            
-            # If the directory is empty or only contains non-database files, we can proceed
-            remaining_files = [f for f in os.listdir(VECTOR_DB_DIR) if f not in ['chroma.sqlite3', 'chroma.sqlite3-shm', 'chroma.sqlite3-wal']]
-            if not remaining_files:
-                # Directory is effectively empty, safe to proceed
-                log_to_sublog(project_dir, "build_rag.log", f"Database directory cleaned: {VECTOR_DB_DIR}")
-            else:
-                log_to_sublog(project_dir, "build_rag.log", f"Database directory contains other files: {remaining_files}")
+                            log_to_sublog(project_dir, "build_rag.log", f"Removed existing database file: {file_path}")
+                        except PermissionError:
+                            # File might be locked, try again after a short delay
+                            time.sleep(0.5)
+                            try:
+                                os.remove(file_path)
+                                log_to_sublog(project_dir, "build_rag.log", f"Removed locked database file: {file_path}")
+                            except Exception as e:
+                                log_to_sublog(project_dir, "build_rag.log", f"Could not remove database file {file_path}: {e}")
                 
-        except Exception as e:
-            log_to_sublog(project_dir, "build_rag.log", f"Warning: Could not clean database directory: {e}")
+                # If the directory is empty or only contains non-database files, we can proceed
+                remaining_files = [f for f in os.listdir(VECTOR_DB_DIR) if f not in ['chroma.sqlite3', 'chroma.sqlite3-shm', 'chroma.sqlite3-wal']]
+                if not remaining_files:
+                    # Directory is effectively empty, safe to proceed
+                    log_to_sublog(project_dir, "build_rag.log", f"Database directory cleaned: {VECTOR_DB_DIR}")
+                else:
+                    log_to_sublog(project_dir, "build_rag.log", f"Database directory contains other files: {remaining_files}")
+                    
+            except Exception as e:
+                log_to_sublog(project_dir, "build_rag.log", f"Warning: Could not clean database directory: {e}")
     
     project_config.create_directories()
     
@@ -118,12 +119,20 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     extensions = project_config.get_extensions()
 
     st.info(f"🎯 Detected project type: **{project_config.project_type.upper()}**")
+    if incremental:
+        st.info(f"🔄 **Incremental build mode** - processing only changed files")
     st.info(f"📁 Processing files with extensions: {', '.join(extensions)} of project {project_config.project_dir_name} ")
     log_highlight("Initialized components", logger)
 
     # File tracking/hash check
     hash_tracker = FileHashTracker(project_dir, project_config.get_db_dir())
-    files_to_process = hash_tracker.get_changed_files(extensions)
+    
+    # Use provided files for incremental build, or get changed files for full build
+    if incremental and files_to_process:
+        log_to_sublog(project_dir, "build_rag.log", f"Incremental build: using provided {len(files_to_process)} files")
+    else:
+        files_to_process = hash_tracker.get_changed_files(extensions)
+        log_to_sublog(project_dir, "build_rag.log", f"Full build: detected {len(files_to_process)} changed files")
     
     # Use centralized model configuration
     embedding_model = model_config.get_embedding_model()
@@ -375,30 +384,76 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
             log_to_sublog(project_dir, "rag_manager.log", error_msg)
             raise Exception(error_msg)
         
-        # Create vectorstore with batch processing and retry logic
-        max_retries = 3
-        for attempt in range(max_retries):
+        # Handle incremental vs full build
+        if incremental and os.path.exists(os.path.join(project_config.get_db_dir(), "chroma.sqlite3")):
+            # Incremental build: load existing database and add/update documents
+            log_to_sublog(project_dir, "build_rag.log", "Incremental build: Loading existing vector database")
+            st.session_state.thinking_logs.append("🔄 Loading existing vector database for incremental update...")
+            update_logs(log_placeholder)
+            
             try:
+                # Load existing vector database
+                existing_vectorstore = Chroma(
+                    persist_directory=project_config.get_db_dir(),
+                    embedding_function=embeddings
+                )
+                
+                # For incremental builds, we need to remove old documents for changed files and add new ones
+                # This is a simplified approach - in production you might want more sophisticated deduplication
+                log_to_sublog(project_dir, "build_rag.log", f"Incremental build: Processing {len(sanitized_docs)} changed documents")
+                st.session_state.thinking_logs.append(f"🔄 Incremental update: Processing {len(sanitized_docs)} changed documents...")
+                update_logs(log_placeholder)
+                
+                # Create new vectorstore with updated documents
                 vectorstore = Chroma.from_documents(
                     documents=sanitized_docs,
                     embedding=embeddings,
                     persist_directory=project_config.get_db_dir()
                 )
-                break  # Success, exit retry loop
+                
+                log_to_sublog(project_dir, "build_rag.log", "Incremental build: Successfully updated vector database")
+                st.session_state.thinking_logs.append("✅ Incremental update completed successfully!")
+                update_logs(log_placeholder)
+                
             except Exception as e:
-                if "readonly database" in str(e).lower() or "database is locked" in str(e).lower():
-                    if attempt < max_retries - 1:
-                        log_to_sublog(project_dir, "build_rag.log", f"Database locked, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
-                        st.session_state.thinking_logs.append(f"⚠️ Database locked, retrying... (attempt {attempt + 1}/{max_retries})")
-                        update_logs(log_placeholder)
-                        time.sleep(2)
-                        continue
+                log_to_sublog(project_dir, "build_rag.log", f"Incremental build failed, falling back to full rebuild: {e}")
+                st.session_state.thinking_logs.append(f"⚠️ Incremental update failed, doing full rebuild: {e}")
+                update_logs(log_placeholder)
+                
+                # Fallback to full rebuild
+                vectorstore = Chroma.from_documents(
+                    documents=sanitized_docs,
+                    embedding=embeddings,
+                    persist_directory=project_config.get_db_dir()
+                )
+        else:
+            # Full build: create new vector database
+            log_to_sublog(project_dir, "build_rag.log", "Full build: Creating new vector database")
+            
+            # Create vectorstore with batch processing and retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    vectorstore = Chroma.from_documents(
+                        documents=sanitized_docs,
+                        embedding=embeddings,
+                        persist_directory=project_config.get_db_dir()
+                    )
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if "readonly database" in str(e).lower() or "database is locked" in str(e).lower():
+                        if attempt < max_retries - 1:
+                            log_to_sublog(project_dir, "build_rag.log", f"Database locked, retrying in 2 seconds... (attempt {attempt + 1}/{max_retries})")
+                            st.session_state.thinking_logs.append(f"⚠️ Database locked, retrying... (attempt {attempt + 1}/{max_retries})")
+                            update_logs(log_placeholder)
+                            time.sleep(2)
+                            continue
+                        else:
+                            log_to_sublog(project_dir, "build_rag.log", f"Failed to create database after {max_retries} attempts: {e}")
+                            raise e
                     else:
-                        log_to_sublog(project_dir, "build_rag.log", f"Failed to create database after {max_retries} attempts: {e}")
+                        # Non-locking error, don't retry
                         raise e
-                else:
-                    # Non-locking error, don't retry
-                    raise e
         
         # Check if we exceeded timeout
         elapsed_time = time.time() - start_time

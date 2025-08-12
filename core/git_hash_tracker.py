@@ -73,18 +73,64 @@ class FileHashTracker:
                 log_to_sublog(self.project_dir, "file_tracking.log", "No files changed since last indexing (git).")
                 return []
             
-            # List all changed/untracked files
-            changed_files = subprocess.check_output(
-                ["git", "ls-files", "--others", "--modified", "--exclude-standard"],
-                cwd=self.project_dir,
-                encoding="utf-8"
-            ).splitlines()
-            changed_files = [os.path.join(self.project_dir, f) for f in changed_files]
-            result = [f for f in changed_files if f.endswith(tuple(extensions)) and os.path.isfile(f)]
-            # Log absolute paths for debugging (logs are system-specific)
+            # Get files that have changed between the last processed commit and current commit
+            changed_files = []
+            
+            try:
+                # Get files changed between commits
+                commit_changed_files = subprocess.check_output(
+                    ["git", "diff", "--name-only", f"{last_commit}..{current_commit}"],
+                    cwd=self.project_dir,
+                    encoding="utf-8"
+                ).splitlines()
+                
+                log_to_sublog(self.project_dir, "file_tracking.log", f"Git diff command: git diff --name-only {last_commit}..{current_commit}")
+                log_to_sublog(self.project_dir, "file_tracking.log", f"Raw git diff output: {commit_changed_files}")
+                
+                # Convert to absolute paths and filter by extensions
+                for file_path in commit_changed_files:
+                    if file_path.endswith(tuple(extensions)):
+                        abs_path = os.path.join(self.project_dir, file_path)
+                        if os.path.isfile(abs_path) and not self._should_ignore_file(abs_path):
+                            changed_files.append(abs_path)
+                
+                log_to_sublog(self.project_dir, "file_tracking.log",
+                              f"Git commit diff detected {len(changed_files)} changed files between {last_commit[:8]} and {current_commit[:8]}")
+                
+            except subprocess.CalledProcessError as e:
+                log_to_sublog(self.project_dir, "file_tracking.log",
+                              f"Failed to get commit diff: {e}, falling back to working directory changes")
+                # Fallback to working directory changes if commit diff fails
+                pass
+            
+            # Also check for untracked and modified files in working directory
+            try:
+                working_dir_changed = subprocess.check_output(
+                    ["git", "ls-files", "--others", "--modified", "--exclude-standard"],
+                    cwd=self.project_dir,
+                    encoding="utf-8"
+                ).splitlines()
+                
+                log_to_sublog(self.project_dir, "file_tracking.log", f"Working directory changes: {working_dir_changed}")
+                
+                for file_path in working_dir_changed:
+                    if file_path.endswith(tuple(extensions)):
+                        abs_path = os.path.join(self.project_dir, file_path)
+                        if os.path.isfile(abs_path) and not self._should_ignore_file(abs_path):
+                            if abs_path not in changed_files:  # Avoid duplicates
+                                changed_files.append(abs_path)
+                
+                log_to_sublog(self.project_dir, "file_tracking.log",
+                              f"Git working directory changes detected {len(working_dir_changed)} files")
+                
+            except subprocess.CalledProcessError as e:
+                log_to_sublog(self.project_dir, "file_tracking.log",
+                              f"Failed to get working directory changes: {e}")
+            
+            # Log total changed files
             log_to_sublog(self.project_dir, "file_tracking.log",
-                          f"Git-detected changed files: {len(result)} files")
-            return result
+                          f"Total Git-detected changed files: {len(changed_files)} files")
+            return changed_files
         except Exception as e:
             log_to_sublog(self.project_dir, "file_tracking.log",
                           f"[WARN] Git tracking failed: {e}; falling back to content-hash.")

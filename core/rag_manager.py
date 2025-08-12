@@ -124,16 +124,6 @@ class RagManager:
         """Check if the RAG index should be rebuilt based on database existence and git tracking."""
         from git_hash_tracker import FileHashTracker
         
-        # If force rebuild is requested, cleanup and always rebuild
-        if force_rebuild:
-            log_to_sublog(project_dir, "rag_manager.log", "=== FORCE REBUILD REQUESTED ===")
-            cleanup_success = self.cleanup_existing_files(project_dir, project_type)
-            if cleanup_success:
-                log_to_sublog(project_dir, "rag_manager.log", "✅ Force rebuild: Cleanup successful, will rebuild")
-            else:
-                log_to_sublog(project_dir, "rag_manager.log", "⚠️ Force rebuild: Cleanup failed, but will still rebuild")
-            return True
-        
         # Get project configuration
         project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
         db_dir = project_config.get_db_dir()
@@ -142,13 +132,13 @@ class RagManager:
         chroma_db_path = os.path.join(db_dir, "chroma.sqlite3")
         if not os.path.exists(chroma_db_path):
             log_to_sublog(project_dir, "rag_manager.log", f"No SQLite database found at {chroma_db_path}, rebuilding")
-            return True
+            return {"rebuild": True, "reason": "no_database", "files": None}
         
         # Check if git tracking file exists
         git_tracking_file = os.path.join(db_dir, "git_tracking.json")
         if not os.path.exists(git_tracking_file):
             log_to_sublog(project_dir, "rag_manager.log", f"No git tracking file found at {git_tracking_file}, rebuilding")
-            return True
+            return {"rebuild": True, "reason": "no_tracking", "files": None}
         
         # Check if there are any changed files
         tracker = FileHashTracker(project_dir, db_dir)
@@ -157,23 +147,36 @@ class RagManager:
         
         if changed_files:
             log_to_sublog(project_dir, "rag_manager.log", f"Found {len(changed_files)} changed files, rebuilding")
-            return True
+            return {"rebuild": True, "reason": "files_changed", "files": changed_files}
         else:
             log_to_sublog(project_dir, "rag_manager.log", "No changed files detected, skipping rebuild")
-            return False
+            return {"rebuild": False, "reason": "no_changes", "files": []}
     
-    def build_rag_index(self, project_dir, ollama_model, ollama_endpoint, project_type, log_placeholder):
+    def build_rag_index(self, project_dir, ollama_model, ollama_endpoint, project_type, log_placeholder, incremental=False, files_to_process=None):
         """Build the RAG index and setup QA chain."""
         log_highlight("RagManager.build_rag_index")
         
         with st.spinner("🔄 Building RAG index..."):
-            retriever = build_rag(
-                project_dir=project_dir,
-                ollama_model=ollama_model,
-                ollama_endpoint=ollama_endpoint,
-                log_placeholder=log_placeholder,
-                project_type=project_type
-            )
+            if incremental and files_to_process:
+                log_to_sublog(project_dir, "rag_manager.log", f"Incremental rebuild: processing {len(files_to_process)} changed files")
+                retriever = build_rag(
+                    project_dir=project_dir,
+                    ollama_model=ollama_model,
+                    ollama_endpoint=ollama_endpoint,
+                    log_placeholder=log_placeholder,
+                    project_type=project_type,
+                    incremental=True,
+                    files_to_process=files_to_process
+                )
+            else:
+                log_to_sublog(project_dir, "rag_manager.log", "Full rebuild: processing all files")
+                retriever = build_rag(
+                    project_dir=project_dir,
+                    ollama_model=ollama_model,
+                    ollama_endpoint=ollama_endpoint,
+                    log_placeholder=log_placeholder,
+                    project_type=project_type
+                )
             
             st.session_state["retriever"] = retriever
             st.session_state["project_dir_used"] = project_dir
