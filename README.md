@@ -225,6 +225,17 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Uses Chroma for vector storage.
 - Comprehensive testing and debugging tools included.
 
+## Backlog
+
+- Add additional model provider, Huggingface embedding and llm model support along side ollama.
+- Create organic building of confidence score
+- Sidebar configurations to choose the model provider with model types
+- Fix rebuild db or index logic
+- Add Role based logic retrieval and rewriting the queries (Adv)
+- Show alternate optional answers along with highly ranked answer (Adv)
+- Include PDFs and WebUrls support to go though and answer questions.
+- Add session memory to add followup questions feature.(Adv)
+
 ---
 
 > _Note: The system includes comprehensive testing and debugging tools. For detailed testing instructions, see the debug_tools documentation._
