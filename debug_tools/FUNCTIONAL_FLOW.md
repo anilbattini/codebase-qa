@@ -2,10 +2,12 @@
 
 ## 🟦 RAG Index Build & Ready Flow
 
-Sidebar: user selects project directory, project type, model, and endpoint       
+Sidebar: user selects project directory, project type, model provider, and endpoint       
 ↓  
 [UIComponents.render_sidebar_config, Line no: 19, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L19)  
-  └─ Renders sidebar inputs for project directory, project type, Ollama model and endpoint.  
+  └─ **ENHANCED**: Renders sidebar inputs for project directory, project type, model provider selection, and provider-specific configuration.  
+  └─ **NEW**: Model Provider dropdown with Ollama and Hugging Face options.  
+  └─ **NEW**: Provider-specific configuration (Ollama endpoint vs Hugging Face cache info).  
   └─ Handles user changes, validations, and warnings about existing data.  
 ↓  
 [RagManager.initialize_session_state, Line no: 14, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L14)  
@@ -15,6 +17,11 @@ Sidebar: user selects project directory, project type, model, and endpoint
 [ProjectConfig.__init__, Line no: 112, core/config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/config.py#L112)  
   └─ Detects or applies project type (auto/manual).  
   └─ Loads language specific file extensions, chunking rules, ignore patterns, and project indicators.  
+↓  
+[ModelConfig._initialize_provider, Line no: 63, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L63)  
+  └─ **NEW**: Initializes the selected model provider (Ollama or Hugging Face).  
+  └─ **NEW**: Sets up provider-specific configuration and availability checks.  
+  └─ **NEW**: Handles provider switching with cache management.  
 ↓  
 [RagManager.should_rebuild_index, Line no: 123, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L123)  
   └─ **NEW**: Returns detailed rebuild information: {"rebuild": bool, "reason": str, "files": list}  
@@ -61,10 +68,11 @@ If user requests force rebuild (via "🔄 Force Rebuild" button)
   └─ **ENHANCED**: Shows build mode: "🔄 Incremental build mode - processing only changed files" or "Full build mode".  
   └─ Reads files, applies chunking per language, extracts semantic metadata.  
   └─ Creates output folders and handles incremental file processing via git/hash tracking.  
-  └─ Initializes embedding model and verifies Ollama endpoint responsiveness.  
+  └─ **ENHANCED**: Initializes embedding model via ModelProvider interface (Ollama or Hugging Face).  
+  └─ **NEW**: Uses in-memory caching to prevent model reloading.  
   └─ Processes each source file: chunks files, extracts metadata, deduplicates using chunk fingerprints.  
   └─ Builds code relationships and hierarchical index files.  
-  └─ Sanitizes chunks and sends batches for embedding via Ollama API.  
+  └─ Sanitizes chunks and sends batches for embedding via selected provider API.  
   └─ **ENHANCED**: Persists embeddings in Chroma vector database with incremental update support.  
   └─ Updates file tracking and logs detailed stats on the process.  
 ↓  
@@ -77,11 +85,15 @@ If user requests force rebuild (via "🔄 Force Rebuild" button)
   └─ **NEW**: Provides detailed logging: "Git commit diff detected X changed files between {last_commit} and {current_commit}".  
   └─ **NEW**: Falls back to content-hash tracking if Git tracking fails.  
 ↓  
-[ModelConfig.get_embedding_model, Line no: 63, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L63)  
-  └─ Retrieves the embedding model name to ensure consistency in embedding dimensions.  
+[ModelProvider.get_embedding_model, Line no: 63, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py#L63)  
+  └─ **NEW**: Retrieves embedding model via abstract ModelProvider interface.  
+  └─ **NEW**: Supports both Ollama and Hugging Face providers.  
+  └─ **NEW**: Implements in-memory caching to prevent model reloading.  
+  └─ **NEW**: Uses custom cache directory for Hugging Face models.  
 ↓  
-[ModelConfig.get_ollama_endpoint, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py)  
-  └─ Retrieves the Ollama server endpoint URL used for embedding and LLM calls.  
+[ModelConfig.get_current_provider, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py)  
+  └─ **NEW**: Returns the current model provider instance (Ollama or Hugging Face).  
+  └─ **NEW**: Handles provider switching with cache management.  
 ↓  
 [chunker_factory.get_chunker, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py)  
   └─ Selects language-specific chunking strategy function per file extension.  
@@ -98,77 +110,183 @@ If user requests force rebuild (via "🔄 Force Rebuild" button)
 [chunker_factory.summarize_chunk, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py)  
   └─ Creates concise summary keywords from chunks for retrieval relevance boosts.  
 ↓  
-[build_code_relationship_map, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py)  
-  └─ Constructs mappings of code dependencies to understand file impact and relationships.  
+[ModelProvider.embed_documents, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: Embeds chunks using the selected provider (Ollama or Hugging Face).  
+  └─ **NEW**: Uses cached model instances to prevent reloading.  
+  └─ **NEW**: Handles provider-specific embedding formats and error handling.  
 ↓  
-[HierarchicalIndexer.create_hierarchical_index, core/hierarchical_indexer.py](https://github.com/anilbattini/codebase-qa/blob/main/core/hierarchical_indexer.py)  
-  └─ Builds layered hierarchical indexes grouping chunks by modules, files, classes.  
+[Chroma.persist, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py)  
+  └─ **ENHANCED**: Persists embeddings in Chroma vector database with incremental update support.  
+  └─ **NEW**: Handles both full rebuild and incremental update scenarios.  
 ↓  
-(Sanitize chunks for embedding ingestion)  
-  └─ Cleans chunk contents and metadata ensuring compatibility with vector storage.  
+[FileHashTracker.update_tracking, core/git_hash_tracker.py](https://github.com/anilbattini/codebase-qa/blob/main/core/git_hash_tracker.py)  
+  └─ **ENHANCED**: Updates file tracking with new commit SHA and file hashes.  
+  └─ **NEW**: Supports incremental tracking for changed files only.  
 ↓  
-(Embed chunks in batches with OllamaEmbeddings via Ollama API)  
-  └─ Sends semantic chunks in batches to generate embeddings with consistent vector dimensions.  
-↓  
-(Store embedded vectors and metadata in persistent Chroma vector database)  
-  └─ **ENHANCED**: For incremental builds: updates existing database with new documents.  
-  └─ **ENHANCED**: For full builds: creates new database from scratch.  
-  └─ **NEW**: Handles incremental vs full database creation with proper error handling and fallbacks.  
-↓  
-(Update git or file hash tracking records)  
-  └─ Records processed files for incremental rebuild detection on next run.  
+[ProjectConfig.create_directories, Line no: 181, core/config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/config.py#L181)  
+  └─ Ensures all database and logs directories exist for current project type.  
 ↓  
 [RagManager.build_rag_index, Line no: 162, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L162)  
-  └─ Finalizes by setting retriever and QA chain in session state for query answering.  
+  └─ **ENHANCED**: Stores retriever in session state for later QA chain setup.  
+  └─ **NEW**: Supports both incremental and full rebuild modes.  
+  └─ **NEW**: Logs detailed build information and performance metrics.  
+↓  
+[App.py success message, Line no: 150, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L150)  
+  └─ **ENHANCED**: Shows appropriate success message based on build mode.  
+  └─ **NEW**: "✅ RAG index built successfully!" for full builds.  
+  └─ **NEW**: "✅ RAG index rebuilt successfully!" for incremental builds.  
 
-**NO REBUILD REQUIRED (No changes detected):**
+**RAG INDEX READY:**
 ↓  
-[App.py no changes handling, Line no: 89, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L89)  
-  └─ **NEW**: Shows success message: "✅ No file changes detected. RAG index is up to date."  
-  └─ **NEW**: Displays info box: "💡 No new files to process. The RAG index is already up to date with the latest changes."  
-  └─ **NEW**: Provides "🔄 Force Rebuild" button for manual rebuild option.  
-  └─ **NEW**: Similar to project type change logic: asks user permission before major operations.  
-↓  
-[RagManager.load_existing_rag_index, Line no: 194, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L194)  
-  └─ Loads existing embeddings, vector DB, retriever, and QA chain from disk.  
-  └─ Uses same embedding model as in build step to avoid dimension mismatches.  
-  └─ Ensures session state is ready for query processing.  
-↓  
-RAG system is ready for queries with retriever and QA chain available in Streamlit session state.
+[App.py chat interface, Line no: 200, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L200)  
+  └─ **ENHANCED**: Shows chat interface only when RAG is ready.  
+  └─ **NEW**: Renders chat history with metadata display.  
+  └─ **NEW**: Sets up chat handler with proper error handling.  
+  └─ **NEW**: Processes queries using the selected model provider.  
 
+## 🟩 Chat Query Processing Flow
 
-## 🟩 User Query & Answer Flow
+User enters query in chat input form  
+↓  
+[UIComponents.render_chat_input, Line no: 500, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L500)  
+  └─ **ENHANCED**: Renders chat input form with proper form submission handling.  
+  └─ **NEW**: Always enabled when RAG is ready (no more disabled state).  
+↓  
+[ChatHandler.process_query, Line no: 43, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L43)  
+  └─ **ENHANCED**: Enhanced query processing with intent classification, rewriting, and RAG support.  
+  └─ **NEW**: Supports both RAG-enabled and RAG-disabled modes.  
+  └─ **NEW**: Uses in-memory cached models for faster processing.  
+↓  
+[QueryIntentClassifier.classify_intent, Line no: 36, core/query_intent_classifier.py](https://github.com/anilbattini/codebase-qa/blob/main/core/query_intent_classifier.py#L36)  
+  └─ **ENHANCED**: Classifies query intent with confidence scoring.  
+  └─ **NEW**: Provides query context hints for better retrieval.  
+↓  
+[ChatHandler._rewrite_query_with_intent, Line no: 300, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L43)  
+  └─ **ENHANCED**: Rewrites queries based on intent for better retrieval.  
+  └─ **NEW**: Uses LLM chain for intelligent query rewriting.  
+↓  
+[RagManager.get_retriever, Line no: 380, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L380)  
+  └─ **NEW**: Lazy loading of retriever - only loads when needed.  
+  └─ **NEW**: Prevents unnecessary model loading during RAG loading.  
+↓  
+[Retriever.invoke, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L43)  
+  └─ **ENHANCED**: Retrieves relevant documents using rewritten query.  
+  └─ **NEW**: Falls back to original query if no results.  
+  └─ **NEW**: Tries key terms if still no results.  
+↓  
+[ContextBuilder.build_enhanced_context, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py)  
+  └─ **ENHANCED**: Builds enhanced context window using retrieved documents.  
+  └─ **NEW**: Incorporates intent-aware context building.  
+↓  
+[RagManager.lazy_get_qa_chain, Line no: 350, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L350)  
+  └─ **NEW**: Lazy loading of QA chain - only created when needed.  
+  └─ **NEW**: Uses cached retriever and loads LLM model on demand.  
+  └─ **NEW**: Implements in-memory caching for QA chain.  
+↓  
+[ModelProvider.get_llm_model, Line no: 300, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py#L300)  
+  └─ **NEW**: Retrieves LLM model via abstract ModelProvider interface.  
+  └─ **NEW**: Supports both Ollama and Hugging Face providers.  
+  └─ **NEW**: Implements in-memory caching to prevent model reloading.  
+↓  
+[QAChain.invoke, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L43)  
+  └─ **ENHANCED**: Generates answer using enhanced context and query.  
+  └─ **NEW**: Falls back to direct LLM call if QA chain fails.  
+  └─ **NEW**: Handles provider-specific response formats.  
+↓  
+[App.py chat history update, Line no: 220, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L220)  
+  └─ **NEW**: Stores chat history with metadata in session state.  
+  └─ **NEW**: Forces UI refresh to show new chat history.  
+  └─ **NEW**: Handles errors gracefully with user feedback.  
 
-User enters a question in the chat UI input box           
+## 🟨 Model Provider Management Flow
+
+User selects model provider in sidebar  
 ↓  
-[UIComponents.render_chat_input, Line no: 161, core/ui_components.py](https://github.com/kumarb/codebase-qa/blob/main/core/ui_components.py#L161)  
-  └─ Captures user's natural language question input.  
-  └─ Disables input if RAG system is not fully ready.  
+[UIComponents.render_sidebar_config, Line no: 76, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L76)  
+  └─ **NEW**: Model Provider dropdown with Ollama and Hugging Face options.  
+  └─ **NEW**: Provider-specific configuration display.  
 ↓  
-[RagManager.is_ready, Line no: 195, core/rag_manager.py](https://github.com/kumarb/codebase-qa/blob/main/core/rag_manager.py#L195)  
-  └─ Checks session state to ensure retriever and QA chain objects are initialized.  
-  └─ Prevents query submission if system isn't ready.  
+[ModelConfig.switch_to_ollama/switch_to_huggingface, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py)  
+  └─ **NEW**: Handles provider switching with proper initialization.  
+  └─ **NEW**: Sets provider type and initializes provider instance.  
 ↓  
-[QueryIntentClassifier.classify_intent, Line no: 29, core/query_intent_classifier.py](https://github.com/kumarb/codebase-qa/blob/main/core/query_intent_classifier.py#L29)  
-  └─ Applies pattern-based matching on user query to classify intent (e.g., overview, validation).  
-  └─ Returns intent label and confidence score to inform retrieval strategy.  
+[set_provider, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: Global provider management function.  
+  └─ **NEW**: Clears previous provider cache to prevent memory issues.  
+  └─ **NEW**: Creates new provider instance via factory pattern.  
 ↓  
-[QueryIntentClassifier.get_query_context_hints, Line no: 56, core/query_intent_classifier.py](https://github.com/kumarb/codebase-qa/blob/main/core/query_intent_classifier.py#L56)  
-  └─ Optionally extracts relevant keywords or anchors based on classified intent.  
-  └─ These hints boost relevant context retrieval.  
+[ModelProviderFactory.create_provider, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: Factory pattern for creating provider instances.  
+  └─ **NEW**: Supports both Ollama and Hugging Face providers.  
 ↓  
-[Retriever.get_relevant_documents, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py)  
-  └─ Performs vector similarity search in Chroma vector store.  
-  └─ Retrieves top-k most semantically relevant code chunks for user query.  
+[ModelProvider.check_availability, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: Provider-specific availability checks.  
+  └─ **NEW**: Ollama: HTTP endpoint responsiveness.  
+  └─ **NEW**: Hugging Face: Local model availability and cache status.  
 ↓  
-[ChatHandler & RetrievalQA (combined with LangChain library), core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py)  
-  └─ Constructs prompt consisting of user query plus retrieved code chunks with metadata.  
-  └─ Sends prompt to Ollama LLM for natural language generation of the answer.  
+[ModelProvider initialization, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: Provider-specific initialization.  
+  └─ **NEW**: Ollama: Sets endpoint URL.  
+  └─ **NEW**: Hugging Face: Creates custom cache directory and sets environment variables.  
 ↓  
-[build_rag.get_impact, Line no: 379, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L379)  
-  └─ Optionally performs impact analysis tracing file dependencies for related/affected code.  
-  └─ Returns list of impacted files to augment response metadata.  
+[ModelProvider.get_embedding_model/get_llm_model, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: Provider-specific model loading with in-memory caching.  
+  └─ **NEW**: Ollama: Uses langchain_ollama for API calls.  
+  └─ **NEW**: Hugging Face: Downloads and caches local models.  
 ↓  
-[UIComponents.render_chat_history, Line no: 282, core/ui_components.py](https://github.com/kumarb/codebase-qa/blob/main/core/ui_components.py#L282)  
-  └─ Renders generated answer, source chunk attributions, and impact metadata in UI.  
-  └─ Supports expansion, chat context, and debug information display.
+[Model caching and reuse, core/model_provider.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_provider.py)  
+  └─ **NEW**: In-memory caching prevents model reloading.  
+  └─ **NEW**: Cache management with clear_cache method.  
+  └─ **NEW**: Custom cache directory for Hugging Face models.  
+
+## 🟪 Error Handling and Fallback Flow
+
+Error occurs during any operation  
+↓  
+[Logger.log_to_sublog, core/logger.py](https://github.com/anilbattini/codebase-qa/blob/main/core/logger.py)  
+  └─ **ENHANCED**: Comprehensive error logging with context.  
+  └─ **NEW**: Provider-specific error logging.  
+  └─ **NEW**: Cache status and model loading error logging.  
+↓  
+[Error handling in core functions, various files](https://github.com/anilbattini/codebase-qa/blob/main/core/)  
+  └─ **ENHANCED**: Graceful error handling with user feedback.  
+  └─ **NEW**: Provider-specific error handling and fallbacks.  
+  └─ **NEW**: Cache corruption handling and recovery.  
+↓  
+[Fallback mechanisms, various files](https://github.com/anilbattini/codebase-qa/blob/main/core/)  
+  └─ **NEW**: Fallback to Ollama if Hugging Face fails.  
+  └─ **NEW**: Fallback to direct LLM calls if QA chain fails.  
+  └─ **NEW**: Fallback to content-hash tracking if Git tracking fails.  
+↓  
+[User notification, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py)  
+  └─ **ENHANCED**: Clear error messages with actionable information.  
+  └─ **NEW**: Provider-specific error messages and solutions.  
+  └─ **NEW**: Cache status and model availability information.  
+
+## 🔄 Key Improvements Summary
+
+### **Multi-Provider Model System**
+- **Abstract Interface**: ModelProvider ABC for consistent provider interface
+- **Provider Implementations**: OllamaProvider and HuggingFaceProvider
+- **Factory Pattern**: ModelProviderFactory for creating provider instances
+- **Global Management**: Centralized provider switching and management
+
+### **Model Caching & Performance**
+- **In-Memory Caching**: Prevents model reloading on every access
+- **Lazy Loading**: Models loaded only when needed
+- **Cache Management**: Automatic cache clearing during provider switching
+- **Custom Cache Directory**: Dedicated Hugging Face cache location
+
+### **Enhanced RAG Management**
+- **Lazy Loading**: Retriever and QA chain loaded only when needed
+- **Incremental Builds**: Smart rebuild detection and processing
+- **Git Tracking**: Enhanced change detection with commit differences
+- **User Experience**: Clear progress indicators and confirmation flows
+
+### **Improved Error Handling**
+- **Provider-Specific Errors**: Tailored error messages and solutions
+- **Graceful Fallbacks**: Multiple fallback mechanisms for robustness
+- **Comprehensive Logging**: Detailed logging for debugging and monitoring
+- **User Feedback**: Clear error messages with actionable information
+
+This enhanced functional flow provides a comprehensive understanding of the new multi-provider system, model caching, and incremental build capabilities while maintaining backward compatibility with existing Ollama functionality.

@@ -6,3 +6,6 @@ numpy
 pathspec
 streamlit
 torch
+transformers
+sentence-transformers
+requests

@@ -76,21 +76,132 @@ class UIComponents:
             if ProcessManager.safe_project_type_change():
                 self._render_project_type_selector(project_types)
             
-            ollama_model = st.text_input("🧠 Ollama Model", value=st.session_state.get("ollama_model", model_config.get_ollama_model()))
-            ollama_endpoint = st.text_input("🔗 Ollama Endpoint", value=st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint()))
+            # Model Provider Selection
+            st.subheader("🤖 Model Provider")
             
-            # Log configuration changes
-            current_model = st.session_state.get("ollama_model", model_config.get_ollama_model())
-            current_endpoint = st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint())
+            provider_type = st.selectbox(
+                "Choose Model Provider:",
+                ["ollama", "huggingface"],
+                index=0 if model_config.get_current_provider_type() == "ollama" else 1,
+                help="Ollama: Local LLM server | Hugging Face: Local open-source models"
+            )
             
-            if ollama_model != current_model:
-                log_to_sublog(project_dir, "ui_components.log", f"🧠 Ollama model changed: {current_model} -> {ollama_model}")
-                st.session_state["ollama_model"] = ollama_model
+            if provider_type != model_config.get_current_provider_type():
+                try:
+                    if provider_type == "ollama":
+                        model_config.switch_to_ollama()
+                        st.success("✅ Switched to Ollama provider")
+                    else:
+                        model_config.switch_to_huggingface()
+                        st.success("✅ Switched to Hugging Face provider")
+                except Exception as e:
+                    st.error(f"❌ Failed to switch provider: {e}")
             
-            if ollama_endpoint != current_endpoint:
-                log_to_sublog(project_dir, "ui_components.log", f"🔗 Ollama endpoint changed: {current_endpoint} -> {ollama_endpoint}")
-                st.session_state["ollama_endpoint"] = ollama_endpoint
-
+            # Provider-specific configuration
+            if provider_type == "ollama":
+                st.info("🦙 **Ollama Provider**: Local LLM server with easy model management")
+                
+                # Ollama endpoint configuration
+                ollama_endpoint = st.text_input(
+                    "Ollama Endpoint:",
+                    value=model_config.get_ollama_endpoint(),
+                    help="URL of your Ollama server (default: http://localhost:11434)"
+                )
+                
+                if ollama_endpoint != model_config.get_ollama_endpoint():
+                    model_config.set_ollama_endpoint(ollama_endpoint)
+                
+                # Ollama model selection
+                ollama_model = st.text_input(
+                    "Ollama Model:",
+                    value=model_config.get_ollama_model(),
+                    help="Name of the Ollama model to use (e.g., llama3.1:latest)"
+                )
+                
+                if ollama_model != model_config.get_ollama_model():
+                    model_config.set_ollama_model(ollama_model)
+                
+                # Ollama embedding model
+                ollama_embedding = st.text_input(
+                    "Ollama Embedding Model:",
+                    value=model_config.get_embedding_model(),
+                    help="Name of the Ollama embedding model (e.g., nomic-embed-text:latest)"
+                )
+                
+                if ollama_embedding != model_config.get_embedding_model():
+                    model_config.set_embedding_model(ollama_embedding)
+                
+            else:  # Hugging Face
+                st.info("🤗 **Hugging Face Provider**: Local open-source models (no API token required)")
+                
+                # Show cache directory info
+                provider = model_config.get_current_provider()
+                if hasattr(provider, 'get_cache_info'):
+                    cache_info = provider.get_cache_info()
+                    st.success(f"📁 **Cache Directory**: `{cache_info['cache_directory']}`")
+                    
+                    if cache_info['exists']:
+                        if cache_info['models']:
+                            st.info(f"📦 **Downloaded Models**: {', '.join(cache_info['models'])}")
+                
+                # Hugging Face embedding model
+                hf_embedding = st.text_input(
+                    "Hugging Face Embedding Model:",
+                    value=model_config.get_huggingface_embedding_model(),
+                    help="Local embedding model name (e.g., sentence-transformers/all-MiniLM-L6-v2)"
+                )
+                
+                if hf_embedding != model_config.get_huggingface_embedding_model():
+                    model_config.set_huggingface_embedding_model(hf_embedding)
+                
+                # Hugging Face LLM model
+                hf_llm = st.text_input(
+                    "Hugging Face LLM Model:",
+                    value=model_config.get_huggingface_llm_model(),
+                    help="Local LLM model name (e.g., microsoft/DialoGPT-medium)"
+                )
+                
+                if hf_llm != model_config.get_huggingface_llm_model():
+                    model_config.set_huggingface_llm_model(hf_llm)
+                
+                # Model download info
+                st.warning("⚠️ **Note**: Hugging Face models will be downloaded automatically to your custom cache directory on first use. This may take a few minutes depending on model size.")
+                
+                # Download models button
+                if st.button("📥 Download Models Now", help="Download all configured Hugging Face models to custom cache directory"):
+                    try:
+                        with st.spinner("Downloading models to custom cache directory... This may take several minutes."):
+                            provider = model_config.get_current_provider()
+                            if hasattr(provider, 'download_all_models'):
+                                success = provider.download_all_models()
+                                if success:
+                                    st.success("✅ All models downloaded successfully to custom cache directory!")
+                                    # Refresh cache info
+                                    if hasattr(provider, 'get_cache_info'):
+                                        cache_info = provider.get_cache_info()
+                                        st.info(f"📁 Models stored in: `{cache_info['cache_directory']}`")
+                                else:
+                                    st.error("❌ Failed to download some models. Check logs for details.")
+                            else:
+                                st.error("❌ Provider doesn't support model downloading")
+                    except Exception as e:
+                        st.error(f"❌ Download failed: {e}")
+                
+                # Show recommended models
+                with st.expander("📚 Recommended Models"):
+                    st.markdown("""
+                    **Fast & Lightweight (Recommended):**
+                    - Embeddings: `sentence-transformers/paraphrase-MiniLM-L3-v2` (384d, ~61MB)
+                    - LLM: `microsoft/DialoGPT-small` (~117MB)
+                    
+                    **Better Quality:**
+                    - Embeddings: `sentence-transformers/all-MiniLM-L6-v2` (384d, ~90MB)
+                    - LLM: `microsoft/DialoGPT-medium` (~345MB)
+                    
+                    **Code-Specific:**
+                    - Embeddings: `microsoft/codebert-base` (768d, ~500MB)
+                    """)
+            
             # Use safe force rebuild check
             force_rebuild = ProcessManager.safe_force_rebuild_check()
             if st.session_state.selected_project_type is None and not ProcessManager.is_building_rag():
@@ -103,7 +214,107 @@ class UIComponents:
                 debug_mode = ProcessManager.safe_debug_mode_check()
             # Don't set session state here as the widget already manages it
 
-        return project_dir, ollama_model, ollama_endpoint, force_rebuild, debug_mode
+        return project_dir, model_config.get_ollama_model(), model_config.get_ollama_endpoint(), force_rebuild, debug_mode
+    
+    def _render_ollama_config(self):
+        """Render Ollama-specific configuration."""
+        st.info("🦙 **Ollama Configuration**")
+        
+        ollama_model = st.text_input("🧠 Ollama Model", value=st.session_state.get("ollama_model", model_config.get_ollama_model()))
+        ollama_endpoint = st.text_input("🔗 Ollama Endpoint", value=st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint()))
+        
+        # Log configuration changes
+        current_model = st.session_state.get("ollama_model", model_config.get_ollama_model())
+        current_endpoint = st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint())
+        
+        if ollama_model != current_model:
+            log_to_sublog(st.session_state.get("project_dir", "."), "ui_components.log", f"🧠 Ollama model changed: {current_model} -> {ollama_model}")
+            st.session_state["ollama_model"] = ollama_model
+            model_config.set_ollama_model(ollama_model)
+        
+        if ollama_endpoint != current_endpoint:
+            log_to_sublog(st.session_state.get("project_dir", "."), "ui_components.log", f"🔗 Ollama endpoint changed: {current_endpoint} -> {ollama_endpoint}")
+            st.session_state["ollama_endpoint"] = ollama_endpoint
+            model_config.set_ollama_endpoint(ollama_endpoint)
+        
+        # Check Ollama availability
+        if st.button("🔍 Check Ollama Status"):
+            if model_config.check_provider_availability():
+                st.success("✅ Ollama is running and accessible!")
+            else:
+                st.error("❌ Ollama is not accessible. Please check if it's running.")
+    
+    def _render_huggingface_config(self):
+        """Render Hugging Face-specific configuration."""
+        st.info("🤗 **Hugging Face Configuration**")
+        
+        # API Token (optional)
+        api_token = st.text_input(
+            "🔑 Hugging Face API Token (Optional)", 
+            value=st.session_state.get("huggingface_api_token", model_config.get_huggingface_api_token() or ""),
+            type="password",
+            help="Optional: Use for API access to private models or faster downloads"
+        )
+        
+        if api_token != st.session_state.get("huggingface_api_token", ""):
+            st.session_state["huggingface_api_token"] = api_token
+            model_config.set_huggingface_api_token(api_token)
+            log_to_sublog(st.session_state.get("project_dir", "."), "ui_components.log", "🔑 Hugging Face API token updated")
+        
+        # Embedding Model Selection
+        embedding_model = st.selectbox(
+            "📊 Embedding Model",
+            [
+                "sentence-transformers/all-MiniLM-L6-v2",  # 384 dimensions, fast
+                "sentence-transformers/all-mpnet-base-v2",  # 768 dimensions, better quality
+                "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",  # Multilingual
+                "microsoft/codebert-base",  # Code-specific embeddings
+            ],
+            index=0,
+            help="Choose the embedding model for vector search"
+        )
+        
+        if embedding_model != model_config.get_huggingface_embedding_model():
+            model_config.set_huggingface_embedding_model(embedding_model)
+            log_to_sublog(st.session_state.get("project_dir", "."), "ui_components.log", f"📊 HuggingFace embedding model changed to: {embedding_model}")
+        
+        # LLM Model Selection
+        llm_model = st.selectbox(
+            "🧠 Hugging Face LLM Model (Open/No Token)",
+            [
+                "Qwen/Qwen2.5-7B-Instruct",        # default
+                "microsoft/Phi-3.5-mini-instruct", # smaller, long context
+                "tiiuae/falcon-7b-instruct",       # open 7B
+                "distilgpt2"                       # baseline
+            ],
+            index=0 if model_config.get_huggingface_llm_model() == "Qwen/Qwen2.5-7B-Instruct" else
+                max(0, [
+                    "Qwen/Qwen2.5-7B-Instruct",
+                    "microsoft/Phi-3.5-mini-instruct",
+                    "tiiuae/falcon-7b-instruct",
+                    "distilgpt2"
+                ].index(model_config.get_huggingface_llm_model())),
+            help="Choose an open instruction-tuned model (no HF token required)."
+        )
+        if llm_model != model_config.get_huggingface_llm_model():
+            model_config.set_huggingface_llm_model(llm_model)
+            log_to_sublog(st.session_state.get("project_dir", "."), "ui_components.log",
+                        f"🧠 HuggingFace LLM model changed to: {llm_model}")
+
+
+        
+        # Check Hugging Face availability
+        if st.button("🔍 Check Hugging Face Status"):
+            if model_config.check_provider_availability():
+                st.success("✅ Hugging Face models are available!")
+                
+                # Show available models
+                available_models = model_config.get_available_models()
+                if available_models:
+                    st.info(f"📋 Available models: {', '.join(available_models[:3])}{'...' if len(available_models) > 3 else ''}")
+            else:
+                st.error("❌ Hugging Face models are not available. Please install required packages.")
+                st.info("💡 Required packages: transformers, sentence-transformers, torch")
     
     def render_build_status(self):
         """Render build status if RAG building is in progress."""
@@ -112,9 +323,16 @@ class UIComponents:
         if is_timeout:
             st.error(f"❌ RAG building has been running for {elapsed/60:.1f} minutes and may be stuck!")
             st.warning("The embedding computation may be hanging. Consider:")
-            st.write("1. Check if Ollama is running and responsive")
-            st.write("2. Try a smaller model or fewer documents")
-            st.write("3. Restart the application")
+            
+            provider_type = model_config.get_provider_type()
+            if provider_type == "ollama":
+                st.write("1. Check if Ollama is running and responsive")
+                st.write("2. Try a smaller model or fewer documents")
+                st.write("3. Restart the application")
+            else:  # huggingface
+                st.write("1. Check if required packages are installed")
+                st.write("2. Try a smaller embedding model")
+                st.write("3. Check available memory for model loading")
             
             if st.button("🛑 Force Stop RAG Build"):
                 ProcessManager.finish_rag_build()
@@ -289,7 +507,7 @@ class UIComponents:
                 "📝 Your question",
                 placeholder="What does the project do?",
                 key="query_input",
-                disabled=not st.session_state.get("qa_chain")
+                disabled=False  # Always enable input when RAG is ready
             )
             submitted = st.form_submit_button("🚀 Ask")
         return query, submitted
