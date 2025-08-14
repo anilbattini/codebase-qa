@@ -9,6 +9,15 @@ from logger import setup_global_logger, log_highlight
 from config import ProjectConfig
 from process_manager import ProcessManager
 
+import os
+# Ensure cache env is set before any HF/torch import
+os.environ.pop("TRANSFORMERS_CACHE", None)  # avoid deprecation/path conflicts
+if "HF_HOME" not in os.environ:
+    # Keep in sync with model_provider default
+    username = os.getenv('USER') or os.getenv('USERNAME') or 'unknown'
+    os.environ["HF_HOME"] = f"/Users/{username}/codebase-qa/huggingface"
+
+
 # 1. Initial Setup
 st.set_page_config(page_title="Codebase-QA", layout="wide")
 
