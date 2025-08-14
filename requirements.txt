@@ -6,3 +6,10 @@ numpy
 pathspec
 streamlit
 torch
+transformers
+sentence-transformers
+requests
+huggingface-hub
+accelerate
+datasets
+tokenizers

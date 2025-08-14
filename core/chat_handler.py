@@ -2,7 +2,7 @@ import streamlit as st
 import re
 import os
 from langchain.prompts import PromptTemplate
-from build_rag import update_logs, get_impact
+from utils import update_logs, get_impact
 from context_builder import ContextBuilder
 from query_intent_classifier import QueryIntentClassifier
 from logger import log_highlight, log_to_sublog
@@ -117,7 +117,7 @@ class ChatHandler:
             except Exception as e:
                 st.error(f"❌ Retrieval failed: {e}")
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieval failed: {e}")
-                return "Sorry, I couldn't retrieve supporting documents.", [], [], {}
+                return "Sorry, I couldn't retrieve supporting documents.", [], []
 
             if debug_mode:
                 st.info(f"📊 Retrieved {len(retrieved_docs)} chunks")
@@ -158,12 +158,61 @@ class ChatHandler:
             log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced query created: {len(enhanced_query)} characters")
             
             # Invoke QA chain
-            result = qa_chain.invoke({"query": enhanced_query})
-            answer = result.get("result", "Sorry, I couldn't generate an answer.")
-            source_documents = result.get("source_documents", [])
-            
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Answer generated: {len(answer)} characters")
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Source documents: {len(source_documents)} documents")
+            try:
+                result = qa_chain.invoke({"query": enhanced_query})
+                answer = result.get("result", "Sorry, I couldn't generate an answer.")
+                source_documents = result.get("source_documents", [])
+                
+                # Check if answer is empty or too short
+                if not answer or len(answer.strip()) < 10:
+                    log_to_sublog(self.project_dir, "chat_handler.log", f"Warning: Generated answer too short: '{answer}'")
+                    # Try to generate a simple answer using the LLM directly
+                    try:
+                        simple_prompt = f"Based on the context provided, answer this question: {query}\n\nContext: {enhanced_context[:1000]}..."
+                        direct_answer = self.llm(simple_prompt)
+                        if direct_answer and len(direct_answer.strip()) > 10:
+                            answer = direct_answer.strip()
+                            log_to_sublog(self.project_dir, "chat_handler.log", f"Generated direct answer: {len(answer)} characters")
+                        else:
+                            answer = "I found relevant information but couldn't generate a complete answer. Please try rephrasing your question."
+                    except Exception as direct_error:
+                        log_to_sublog(self.project_dir, "chat_handler.log", f"Direct LLM call failed: {direct_error}")
+                        answer = "I found relevant information but couldn't generate a complete answer. Please try rephrasing your question."
+                
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Answer generated: {len(answer)} characters")
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Source documents: {len(source_documents)} documents")
+                
+            except Exception as qa_error:
+                log_to_sublog(self.project_dir, "chat_handler.log", f"QA chain invocation failed: {qa_error}")
+                # Fallback: try direct LLM call
+                try:
+                    fallback_prompt = f"Answer this question based on the context: {query}\n\nContext: {enhanced_context[:1000]}..."
+                    answer = self.llm(fallback_prompt)
+                    source_documents = []
+                    log_to_sublog(self.project_dir, "chat_handler.log", f"Fallback answer generated: {len(answer)} characters")
+                except Exception as fallback_error:
+                    log_to_sublog(self.project_dir, "chat_handler.log", f"Fallback also failed: {fallback_error}")
+                    answer = "Sorry, I couldn't generate an answer. Please try rephrasing your question."
+                    source_documents = []
+                    
+            # If Hugging Face provider and answer is too short/generic, retry
+            from model_config import model_config
+            if model_config.get_current_provider_type() == "huggingface":
+                if not answer or len(answer) < 15 or "Based on the information provided" in answer:
+                    log_to_sublog(self.project_dir, "chat_handler.log",
+                                "⚠️ QA chain answer too short/generic — retrying direct HF LLM.")
+                    try:
+                        direct_prompt = f"""You are an assistant answering questions based ONLY on the provided code context.
+            Context:
+            {enhanced_context}
+
+            Question: {query}
+
+            Answer clearly and specifically using the details from the context above."""
+                        answer = self.llm(direct_prompt).strip()
+                    except Exception as e:
+                        log_to_sublog(self.project_dir, "chat_handler.log", f"❌ Direct HF retry failed: {e}")
+
             
             # Rerank documents by intent if we have source documents
             if source_documents:
@@ -235,11 +284,44 @@ class ChatHandler:
             log_to_sublog(self.project_dir, "rewriting_queries.log",
                 f"\nOriginal: {query}\nIntent: {intent}"
             )
-            rewritten = self.rewrite_chain.invoke({
+            
+            # Invoke the rewrite chain
+            response = self.rewrite_chain.invoke({
                 "original": query,
                 "project_type": self.project_config.project_type,
                 "intent": intent
-            }).content.strip()
+            })
+            
+            # Handle both string and structured responses
+            if hasattr(response, 'content'):
+                # Structured response (e.g., from LangChain)
+                rewritten = response.content.strip()
+            elif isinstance(response, str):
+                # Direct string response (e.g., from Hugging Face LLM)
+                rewritten = response.strip()
+            else:
+                # Fallback: try to convert to string
+                rewritten = str(response).strip()
+            
+            # Check if the rewritten query is empty or too short
+            if not rewritten or len(rewritten.strip()) < 3:
+                log_to_sublog(self.project_dir, "rewriting_queries.log",
+                    f"Warning: Empty or too short rewritten query: '{rewritten}'"
+                )
+                # Fallback to a simple keyword-based rewrite
+                if intent == "overview":
+                    rewritten = "main activity MainActivity application purpose project structure manifest build.gradle README documentation"
+                elif intent == "technical":
+                    rewritten = "code implementation function class method technical details"
+                elif intent == "ui_flow":
+                    rewritten = "UI screen activity fragment layout navigation flow"
+                else:
+                    rewritten = query  # Use original query as fallback
+                
+                log_to_sublog(self.project_dir, "rewriting_queries.log",
+                    f"Using fallback rewritten query: '{rewritten}'"
+                )
+            
             log_to_sublog(self.project_dir, "rewriting_queries.log",
                 f"Rewritten: {rewritten}\n"
             )
