@@ -8,7 +8,6 @@ import streamlit as st
 
 from langchain.docstore.document import Document
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
 
 from chunker_factory import get_chunker, summarize_chunk
 from git_hash_tracker import FileHashTracker
@@ -169,6 +168,76 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     logger = setup_global_logger(project_config.get_logs_dir())
     log_highlight("START build_rag", logger)
     METADATA_FILE = project_config.get_metadata_file()
+    
+    # Initialize embeddings using the model provider
+    st.session_state.thinking_logs.append("🤖 Initializing embedding model...")
+    update_logs(log_placeholder)
+    log_to_sublog(project_dir, "build_rag.log", "Initializing embedding model...")
+    
+    try:
+        # Get the current model provider
+        provider = model_config.get_current_provider()
+        provider_type = model_config.get_current_provider_type()
+        
+        if provider_type == "ollama":
+            # Use Ollama embeddings
+            embedding_model = model_config.get_embedding_model()
+            embeddings = provider.get_embedding_model(model_name=embedding_model)
+            log_to_sublog(project_dir, "build_rag.log", f"Using Ollama embedding model: {embedding_model}")
+        else:  # huggingface
+            # Use Hugging Face embeddings
+            embedding_model = model_config.get_huggingface_embedding_model()
+            embeddings = provider.get_embedding_model(model_name=embedding_model)
+            log_to_sublog(project_dir, "build_rag.log", f"Using HuggingFace embedding model: {embedding_model}")
+        
+        # Dynamically detect embedding dimension to avoid mismatch
+        try:
+            test_vec = embeddings.embed_query("dimension_check")
+            detected_dim = len(test_vec)
+        except Exception as e:
+            log_to_sublog(project_dir, "build_rag.log",
+                        f"⚠️ Failed to auto-detect embedding dimension: {e}, falling back to provider assumption")
+            detected_dim = 768 if provider_type == "ollama" else 384 # Ollama uses 768, HuggingFace uses 384
+
+        # Store embedding model metadata for consistency
+        embedding_metadata = {
+            "provider_type": provider_type,
+            "embedding_model": embedding_model,
+            "dimensions": detected_dim,
+            "created_at": time.time(),
+            "project_type": project_type,
+            "project_dir": project_dir
+        }
+        
+        # Save embedding metadata to database directory
+        embedding_metadata_file = os.path.join(project_config.get_db_dir(), "embedding_metadata.json")
+        with open(embedding_metadata_file, 'w') as f:
+            json.dump(embedding_metadata, f, indent=2)
+        
+        log_to_sublog(project_dir, "build_rag.log", f"Stored embedding metadata: {embedding_metadata}")
+        st.session_state.thinking_logs.append(f"✅ Embedding model initialized: {embedding_model}")
+        update_logs(log_placeholder)
+        
+    except Exception as e:
+        error_msg = f"Failed to initialize embedding model: {e}"
+        st.error(f"❌ {error_msg}")
+        log_to_sublog(project_dir, "build_rag.log", error_msg)
+        raise Exception(error_msg)
+    
+    # Check provider availability before starting embedding computation
+    st.session_state.thinking_logs.append("🔍 Verifying model provider availability...")
+    update_logs(log_placeholder)
+    
+    if not provider.check_availability():
+        provider_name = "Ollama" if provider_type == "ollama" else "Hugging Face"
+        error_msg = f"{provider_name} is not available. Please check your configuration."
+        st.error(f"❌ {error_msg}")
+        log_to_sublog(project_dir, "build_rag.log", error_msg)
+        raise Exception(error_msg)
+    
+    log_to_sublog(project_dir, "build_rag.log", f"{provider_type.capitalize()} is responsive, starting embedding computation...")
+    st.session_state.thinking_logs.append(f"✅ {provider_type.capitalize()} is ready, starting embedding computation...")
+    update_logs(log_placeholder)
 
     # Components
     metadata_extractor = MetadataExtractor(project_config)
@@ -190,32 +259,6 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     else:
         files_to_process = hash_tracker.get_changed_files(extensions)
         log_to_sublog(project_dir, "build_rag.log", f"Full build: detected {len(files_to_process)} changed files")
-    
-    # Use centralized model configuration
-    embedding_model = model_config.get_embedding_model()
-    ollama_endpoint = model_config.get_ollama_endpoint()
-    
-    # Check if the dedicated embedding model is available, fallback to original model
-    try:
-        import requests
-        response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
-        if response.status_code == 200:
-            available_models = response.json().get("models", [])
-            model_names = [model.get("name", "") for model in available_models]
-            
-            if embedding_model in model_names:
-                st.info(f"🚀 Using dedicated embedding model: {embedding_model}")
-                log_to_sublog(project_dir, "rag_manager.log", f"Using dedicated embedding model: {embedding_model}")
-            else:
-                st.warning(f"⚠️ Dedicated embedding model '{embedding_model}' not found, using LLM model for embeddings (slower)")
-                log_to_sublog(project_dir, "rag_manager.log", f"Dedicated embedding model not found, using LLM model: {ollama_model}")
-                embedding_model = ollama_model
-    except Exception as e:
-        st.warning(f"⚠️ Could not check available models, using LLM model for embeddings: {e}")
-        log_to_sublog(project_dir, "rag_manager.log", f"Could not check models, using LLM model: {ollama_model}")
-        embedding_model = ollama_model
-    
-    embeddings = OllamaEmbeddings(model=embedding_model, base_url=ollama_endpoint)
     
     tracking_status = hash_tracker.get_tracking_status()
     tracking_method = tracking_status['tracking_method']
