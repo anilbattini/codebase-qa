@@ -19,6 +19,63 @@ from hierarchical_indexer import HierarchicalIndexer
 
 from logger import setup_global_logger, log_to_sublog, log_highlight
 
+def load_embedding_metadata(project_dir: str, project_type: str = None) -> dict:
+    """Load embedding model metadata to ensure consistency."""
+    try:
+        project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
+        embedding_metadata_file = os.path.join(project_config.get_db_dir(), "embedding_metadata.json")
+        
+        if os.path.exists(embedding_metadata_file):
+            with open(embedding_metadata_file, 'r') as f:
+                metadata = json.load(f)
+            log_to_sublog(project_dir, "build_rag.log", f"Loaded embedding metadata: {metadata}")
+            return metadata
+        else:
+            log_to_sublog(project_dir, "build_rag.log", "No embedding metadata found, using default")
+            return None
+    except Exception as e:
+        log_to_sublog(project_dir, "build_rag.log", f"Error loading embedding metadata: {e}")
+        return None
+
+def get_consistent_embedding_model(project_dir: str, project_type: str = None):
+    """Get embedding model that's consistent with the database."""
+    try:
+        # Try to load existing embedding metadata
+        metadata = load_embedding_metadata(project_dir, project_type)
+        
+        if metadata and metadata.get("provider_type"):
+            # Use the same provider and model that was used to build the database
+            provider_type = metadata["provider_type"]
+            embedding_model = metadata["embedding_model"]
+            
+            log_to_sublog(project_dir, "build_rag.log", f"Using consistent embedding model: {provider_type} - {embedding_model}")
+            
+            # Set the provider type to match what was used for building
+            model_config.set_provider_type(provider_type)
+            
+            # Get the provider and embedding model
+            provider = model_config.get_current_provider()
+            embeddings = provider.get_embedding_model(model_name=embedding_model)
+            
+            return embeddings, metadata
+        else:
+            # No metadata found, use current provider
+            log_to_sublog(project_dir, "build_rag.log", "No embedding metadata found, using current provider")
+            provider = model_config.get_current_provider()
+            provider_type = model_config.get_current_provider_type()
+            
+            if provider_type == "ollama":
+                embedding_model = model_config.get_embedding_model()
+            else:
+                embedding_model = model_config.get_huggingface_embedding_model()
+            
+            embeddings = provider.get_embedding_model(model_name=embedding_model)
+            return embeddings, None
+            
+    except Exception as e:
+        log_to_sublog(project_dir, "build_rag.log", f"Error getting consistent embedding model: {e}")
+        raise Exception(f"Failed to get consistent embedding model: {e}")
+
 def chunk_fingerprint(chunk: str) -> str:
     import hashlib
     return hashlib.sha256(chunk.encode("utf-8")).hexdigest()
