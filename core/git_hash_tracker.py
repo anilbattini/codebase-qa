@@ -28,6 +28,15 @@ class FileHashTracker:
         else:
             changes = self._get_content_hash_changed_files(extensions)
         return changes
+    
+    def get_all_files(self, extensions):
+        """Returns list of all files matching the given extensions for processing."""
+        log_highlight("FileHashTracker.get_all_files")
+        method = self._detect_tracking_method()
+        if method == "git":
+            return self._get_git_all_files(extensions)
+        else:
+            return self._get_content_hash_all_files(extensions)
 
     def _detect_tracking_method(self):
         # Prefer git if .git present and accessible, else content-hash
@@ -135,17 +144,59 @@ class FileHashTracker:
             log_to_sublog(self.project_dir, "file_tracking.log",
                           f"[WARN] Git tracking failed: {e}; falling back to content-hash.")
             return self._get_content_hash_changed_files(extensions)
-
-# --------------- CODE CHANGE SUMMARY ---------------
-# FIXED
-# - Log path resolution: Changed all log_to_sublog calls from self.project_config.get_logs_dir() to self.project_dir
-# - Centralized logging: All logs now use the centralized logger path resolution to prevent scattered log files
-# - File tracking logs: file_tracking.log now created in the correct project-specific logs directory
-# - Hierarchical .gitignore support: Each .gitignore file now applies only to its directory and subdirectories
-# - Always ignore codebase-qa tool directories: Added automatic filtering of tool directories
-# - Improved pattern matching: Fixed **/build, /build, and other complex gitignore patterns
-# - Config ignore patterns integration: Added config ignore patterns to gitignore processing
-
+    
+    def _get_git_all_files(self, extensions):
+        """Get all tracked files via Git that match the given extensions."""
+        try:
+            # Get all tracked files that match extensions, respecting .gitignore
+            all_files = subprocess.check_output(
+                ["git", "ls-files"],
+                cwd=self.project_dir,
+                encoding="utf-8"
+            ).splitlines()
+            
+            # Filter by extensions and respect hierarchical .gitignore
+            result = []
+            for file_path in all_files:
+                if file_path.endswith(tuple(extensions)):
+                    abs_path = os.path.join(self.project_dir, file_path)
+                    if os.path.isfile(abs_path) and not self._should_ignore_file(abs_path):
+                        result.append(abs_path)
+                    else:
+                        log_to_sublog(self.project_dir, "file_tracking.log", f"Skipping gitignored file: {file_path}")
+            
+            log_to_sublog(self.project_dir, "file_tracking.log",
+                          f"Git-detected all files: {len(result)} files")
+            return result
+            
+        except Exception as e:
+            log_to_sublog(self.project_dir, "file_tracking.log",
+                          f"[WARN] Git all files failed: {e}; falling back to content-hash.")
+            return self._get_content_hash_all_files(extensions)
+    
+    def _get_content_hash_all_files(self, extensions):
+        """Get all files matching extensions via content-hash method."""
+        all_files = []
+        
+        for root, dirs, files in os.walk(self.project_dir):
+            # Skip directories that should be ignored
+            dirs[:] = [d for d in dirs if not self._should_ignore_file(os.path.join(root, d))]
+            
+            for fname in files:
+                if fname.endswith(tuple(extensions)):
+                    path = os.path.join(root, fname)
+                    
+                    # Skip files that should be ignored
+                    if self._should_ignore_file(path):
+                        log_to_sublog(self.project_dir, "file_tracking.log", f"Skipping gitignored file: {os.path.relpath(path, self.project_dir)}")
+                        continue
+                    
+                    all_files.append(path)
+        
+        log_to_sublog(self.project_dir, "file_tracking.log",
+                      f"Content-hash all files: {len(all_files)} files")
+        return all_files
+    
     def _get_content_hash_changed_files(self, extensions):
         """Fallback: compare file hashes to previous run."""
         old_hashes = self._load_hash_file()
@@ -177,11 +228,11 @@ class FileHashTracker:
                             changed_files.append(path)
                     except Exception as e:
                         log_to_sublog(self.project_dir, "file_tracking.log", f"Failed to hash {path}: {e}")
-        # Log absolute paths for debugging (logs are system-specific)
-                    log_to_sublog(self.project_dir, "file_tracking.log",
+        
+        log_to_sublog(self.project_dir, "file_tracking.log",
                       f"Content-hash changed files: {len(changed_files)} files")
         return changed_files
-    
+
     def _get_gitignore_patterns(self):
         """Get gitignore patterns from all .gitignore files in the project and config ignore patterns."""
         patterns = []
@@ -543,10 +594,11 @@ class FileHashTracker:
                 json.dump({"commit": current_commit}, f, indent=2)
 
 # --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - All in-method print statements and ad-hoc logging; now routed exclusively through logger.py for DRY, centralized logging.
-# - Old/duplicated fallback logic for file changes, reduced by clearer try/fallback structure.
-# ADDED
-# - log_highlight/log_to_sublog used for tracking/git/content-hash logs.
-# - Unified status/caching logic for both git and non-git contexts.
-# - Clean entrypoint for downstream code to query tracking method, changed files, update state.
+# FIXED
+# - Log path resolution: Changed all log_to_sublog calls from self.project_config.get_logs_dir() to self.project_dir
+# - Centralized logging: All logs now use the centralized logger path resolution to prevent scattered log files
+# - File tracking logs: file_tracking.log now created in the correct project-specific logs directory
+# - Hierarchical .gitignore support: Each .gitignore file now applies only to its directory and subdirectories
+# - Always ignore codebase-qa tool directories: Added automatic filtering of tool directories
+# - Improved pattern matching: Fixed **/build, /build, and other complex gitignore patterns
+# - Config ignore patterns integration: Added config ignore patterns to gitignore processing
