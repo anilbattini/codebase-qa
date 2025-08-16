@@ -11,6 +11,37 @@ The debug tools provide a complete testing and debugging ecosystem for the RAG c
 - **Quality Assurance**: Performance and accuracy testing
 - **Real-time Logging**: Detailed logging for troubleshooting
 - **🆕 Incremental RAG Build System**: Smart rebuild logic with user confirmation
+- **🆕 Multi-Provider Support**: Ollama and Hugging Face model providers
+- **🆕 Model Caching System**: In-memory caching to prevent model reloading
+
+## 🆕 New Features: Multi-Provider Model System & Caching
+
+### **Dual Model Provider Support**
+The system now supports both Ollama and Hugging Face models with seamless switching:
+
+- **🦙 Ollama Provider**: Local LLM server with easy model management
+- **🤗 Hugging Face Provider**: Local open-source models (no API tokens required)
+- **🔄 Provider Switching**: Dynamic switching between providers via UI
+- **💾 Custom Cache Directory**: Dedicated cache at `/Users/{username}/codebase-qa/huggingface`
+
+### **Model Caching & Performance Improvements**
+- **🧠 In-Memory Caching**: Models are cached in memory to prevent reloading
+- **⚡ Lazy Loading**: Models are only loaded when actually needed
+- **🗑️ Cache Management**: Automatic cache clearing when switching providers
+- **📊 Cache Information**: Detailed cache status and instance tracking
+
+### **Enhanced Model Configuration**
+```python
+# Provider-specific configuration
+if provider_type == "ollama":
+    ollama_endpoint = st.text_input("Ollama Endpoint:", value="http://localhost:11434")
+    ollama_model = st.text_input("Ollama Model:", value="llama3.1:latest")
+elif provider_type == "huggingface":
+    st.info("Local open-source models (no API token required)")
+    st.info(f"Cache Directory: {cache_dir}")
+    st.info(f"Embedding Model: {embedding_model}")
+    st.info(f"LLM Model: {llm_model}")
+```
 
 ## 🆕 New Features: Incremental RAG Build System
 
@@ -47,6 +78,7 @@ Main debug tools class that provides comprehensive debugging functionality:
 - **Configuration Debugging**: Verify system configuration
 - **Session State Management**: Uses actual core methods from session state
 - **🆕 Incremental Build Testing**: Test the new incremental rebuild functionality
+- **🆕 Model Provider Testing**: Test both Ollama and Hugging Face providers
 
 **Key Principle**: Debug tools are UI wrappers around core functionality, not recreators.
 
@@ -62,6 +94,9 @@ results = debug_tools.test_retrieval("MainActivity")
 
 # 🆕 Test incremental rebuild
 debug_tools.test_incremental_rebuild()
+
+# 🆕 Test model provider switching
+debug_tools.test_model_provider_switching()
 ```
 
 ### `chunk_analyzer.py`
@@ -99,6 +134,30 @@ Vector database specific inspection tools:
 - **Database Structure Inspection**: Analyze database structure
 - **Collection Analysis**: Examine database collections
 
+## 🆕 New Core Components
+
+### `model_provider.py`
+**NEW FILE**: Abstract model provider interface supporting both Ollama and Hugging Face:
+
+- **ModelProvider (ABC)**: Abstract base class for all providers
+- **OllamaProvider**: Local LLM server implementation
+- **HuggingFaceProvider**: Local open-source models implementation
+- **ModelProviderFactory**: Factory pattern for creating providers
+- **Global Provider Management**: Centralized provider switching and management
+
+**Key Features**:
+- **In-Memory Caching**: Prevents model reloading on every access
+- **Custom Cache Directory**: Dedicated Hugging Face cache location
+- **Provider Switching**: Seamless switching between providers
+- **Cache Management**: Automatic cache clearing and memory management
+
+### `utils.py`
+**NEW FILE**: Utility functions for common operations:
+
+- **update_logs()**: Real-time log updating in Streamlit UI
+- **get_impact()**: Impact analysis for code changes
+- **Common Helpers**: Reusable utility functions
+
 ## 🧪 Test Suites
 
 ### `ai_debug_tools/developer_test_suite.py`
@@ -114,10 +173,12 @@ python developer_test_suite.py
 **Test Coverage**:
 - ✅ **Project Setup**: Configuration and validation
 - ✅ **Ollama Connectivity**: Model availability and connection
+- ✅ **🆕 Hugging Face Connectivity**: Local model availability and caching
 - ✅ **Embedding Dimension Fix**: Consistent embedding models (768 vs 4096 dimensions)
 - ✅ **RAG Building**: Index creation and management
 - ✅ **🆕 Incremental RAG Building**: Test incremental vs full rebuild scenarios
 - ✅ **🆕 User Confirmation Flow**: Test force rebuild confirmation logic
+- ✅ **🆕 Model Provider Switching**: Test switching between Ollama and Hugging Face
 - ✅ **Query Processing**: Chat functionality with satisfaction scoring
 - ✅ **UI Functionality**: Complete UI testing including rebuild index
 
@@ -126,6 +187,8 @@ python developer_test_suite.py
 - **Force Rebuild Testing**: Test user confirmation and complete rebuild
 - **Git Tracking Validation**: Ensure proper change detection between commits
 - **Database Preservation**: Verify existing data is preserved during incremental builds
+- **Model Provider Testing**: Test both Ollama and Hugging Face providers
+- **Cache Management Testing**: Verify model caching and memory management
 
 **Features**:
 - **Comprehensive Logging**: Detailed logs for all operations
@@ -134,8 +197,88 @@ python developer_test_suite.py
 - **Error Handling**: Robust error detection and reporting
 - **Detailed Reports**: Generates comprehensive test reports
 - **🆕 Incremental Build Metrics**: Tracks incremental vs full build performance
+- **🆕 Model Provider Metrics**: Tracks provider switching and model loading performance
 
 ## 🚀 Production Deployment
+
+## 🆕 Multi-Provider System Architecture
+
+### **Core Components**
+
+#### **1. Model Provider Interface**
+```python
+class ModelProvider(ABC):
+    @abstractmethod
+    def get_embedding_model(self, **kwargs):
+        """Get embedding model instance."""
+        pass
+    
+    @abstractmethod
+    def get_llm_model(self, **kwargs):
+        """Get LLM model instance."""
+        pass
+```
+
+#### **2. Provider Implementations**
+```python
+# Ollama Provider
+class OllamaProvider(ModelProvider):
+    def get_embedding_model(self, **kwargs):
+        from langchain_ollama import OllamaEmbeddings
+        return OllamaEmbeddings(model=kwargs.get('model', 'nomic-embed-text:latest'))
+
+# Hugging Face Provider
+class HuggingFaceProvider(ModelProvider):
+    def get_embedding_model(self, **kwargs):
+        # Check in-memory cache first
+        if model_name in self._embedding_instances:
+            return self._embedding_instances[model_name]
+        # Load and cache model
+        model = SentenceTransformer(model_name, cache_folder=self.cache_dir, device="cpu")
+        self._embedding_instances[model_name] = model
+        return model
+```
+
+#### **3. Global Provider Management**
+```python
+def set_provider(provider_type: str, **kwargs):
+    global _current_provider, _current_provider_type
+    
+    # Clear previous provider cache
+    if _current_provider and hasattr(_current_provider, 'clear_cache'):
+        _current_provider.clear_cache()
+    
+    _current_provider = ModelProviderFactory.create_provider(provider_type, **kwargs)
+    _current_provider_type = provider_type
+```
+
+### **Cache Management System**
+
+#### **In-Memory Caching**
+```python
+class HuggingFaceProvider(ModelProvider):
+    def __init__(self):
+        self._embedding_instances = {}  # Cache embedding models
+        self._llm_instances = {}        # Cache LLM models
+        self._downloaded_models = set() # Track downloaded models
+    
+    def clear_cache(self):
+        """Clear the in-memory model cache to free memory."""
+        self._embedding_instances.clear()
+        self._llm_instances.clear()
+        self._downloaded_models.clear()
+```
+
+#### **Custom Cache Directory**
+```python
+# Set custom cache directory in user's home folder
+username = os.getenv('USER') or os.getenv('USERNAME') or 'unknown'
+self.cache_dir = f"/Users/{username}/codebase-qa/huggingface"
+
+# Set environment variables for Hugging Face
+os.environ['HF_HOME'] = self.cache_dir
+os.environ['SENTENCE_TRANSFORMERS_HOME'] = os.path.join(self.cache_dir, 'sentence_transformers')
+```
 
 ## 🆕 Incremental Build System Architecture
 
@@ -201,6 +344,7 @@ if rebuild_info["reason"] == "no_changes":
 - **💾 Database Preservation**: Maintains existing embeddings and metadata
 - **📊 Smart Change Detection**: Only processes what's necessary
 - **🔄 User Control**: Manual force rebuild when needed
+- **🧠 Model Caching**: Prevents model reloading, faster query processing
 
 ## 🔧 Advanced Usage
 
@@ -230,6 +374,25 @@ log_file = os.path.join(project_dir, "logs", "debug_tools.log")
 with open(log_file, 'r') as f:
     logs = f.read()
     print(logs)
+```
+
+### 🆕 Model Provider Testing
+```python
+# Test model provider switching
+def test_model_provider_switching():
+    # Test Ollama provider
+    model_config.switch_to_ollama()
+    ollama_provider = model_config.get_current_provider()
+    assert ollama_provider.__class__.__name__ == "OllamaProvider"
+    
+    # Test Hugging Face provider
+    model_config.switch_to_huggingface()
+    hf_provider = model_config.get_current_provider()
+    assert hf_provider.__class__.__name__ == "HuggingFaceProvider"
+    
+    # Test cache clearing
+    hf_provider.clear_cache()
+    assert len(hf_provider._embedding_instances) == 0
 ```
 
 ### 🆕 Incremental Build Testing
@@ -269,6 +432,20 @@ debug_tools/
     ├── embedding_dimension_test.py  # Embedding tests
     ├── run_comprehensive_tests.py   # Test runner
     └── test_core_integration.py    # Debug tools tests
+
+core/                      # 🆕 Core system files
+├── app.py                 # Main Streamlit application
+├── model_provider.py      # 🆕 NEW: Multi-provider model system
+├── rag_manager.py         # 🆕 Enhanced: RAG lifecycle management
+├── ui_components.py       # 🆕 Enhanced: Multi-provider UI support
+├── chat_handler.py        # Enhanced: Chat processing
+├── build_rag.py           # Enhanced: Incremental build support
+├── config.py              # Enhanced: Project configuration
+├── model_config.py        # 🆕 Enhanced: Multi-provider configuration
+├── git_hash_tracker.py    # Enhanced: Git tracking improvements
+├── hierarchical_indexer.py # Enhanced: Indexing improvements
+├── utils.py               # 🆕 NEW: Utility functions
+└── ...                    # Other core components
 ```
 
 ## 🎉 Success Indicators
@@ -289,11 +466,33 @@ debug_tools/
 - Accurate retrieval results
 - No dimension mismatches
 
+✅ **🆕 Multi-Provider System Working**:
+- Can switch between Ollama and Hugging Face providers
+- Models are cached in memory (no reloading)
+- Custom cache directory is properly configured
+- Provider switching clears previous caches
+
 ✅ **🆕 Incremental Build System Working**:
 - Properly detects changed files via Git tracking
 - Shows appropriate rebuild messages (incremental vs full)
 - User confirmation flow works for force rebuild
 - Database preservation during incremental builds
+
+### 🆕 New Success Indicators for Multi-Provider System
+✅ **Model Provider Switching**:
+- Can switch from Ollama to Hugging Face and vice versa
+- UI shows appropriate provider information
+- Cache is properly managed during switching
+
+✅ **Model Caching**:
+- Models are loaded once and cached in memory
+- No "Loading checkpoint shards" messages on subsequent access
+- Cache information shows cached instances
+
+✅ **Hugging Face Integration**:
+- Local models are properly downloaded and cached
+- Custom cache directory is created and used
+- No API token required for local models
 
 ### 🆕 New Success Indicators for Incremental Builds
 ✅ **Smart Rebuild Detection**:
@@ -312,6 +511,13 @@ debug_tools/
 - Only necessary files are processed
 
 ## 🚀 Quick Start Guide
+
+### Testing the New Multi-Provider System
+
+1. **Enable Debug Mode**: Click the app title 5 times or check "Debug Mode" in sidebar
+2. **Test Provider Switching**: Use the "Model Provider" dropdown to switch between Ollama and Hugging Face
+3. **Verify Model Caching**: Check that models are loaded once and cached
+4. **Test Cache Management**: Switch providers to verify cache clearing
 
 ### Testing the New Incremental Build System
 
@@ -341,6 +547,10 @@ debug_tools = DebugTools(project_config, model_config.get_ollama_model(), model_
 files = debug_tools.get_available_files()
 results = debug_tools.test_retrieval("MainActivity")
 inspection = debug_tools.inspect_vector_db()
+
+# 🆕 Test new features
+debug_tools.test_model_provider_switching()
+debug_tools.test_incremental_rebuild()
 ```
 
 ## 📊 Logging and Monitoring
@@ -350,6 +560,7 @@ inspection = debug_tools.inspect_vector_db()
 - `logs/rag_manager.log`: RAG operations
 - `logs/build_rag.log`: Index building
 - `logs/git_tracking.log`: File tracking
+- `logs/model_provider.log`: 🆕 Model provider operations
 
 ### Logging Best Practices
 ```python
@@ -387,7 +598,20 @@ if not isinstance(metadata, dict):
     metadata = {}
 ```
 
-### 🆕 4. Incremental Build Issues
+### 🆕 4. Model Provider Issues
+**Error**: `ModuleNotFoundError: No module named 'transformers'`
+
+**Solution**: Install required dependencies: `pip install transformers sentence-transformers torch`
+
+**Error**: Hugging Face models reloading every time
+
+**Solution**: Ensure in-memory caching is working - check `_embedding_instances` and `_llm_instances` in provider
+
+**Error**: Cache directory not found
+
+**Solution**: Verify custom cache directory is created: `/Users/{username}/codebase-qa/huggingface`
+
+### 🆕 5. Incremental Build Issues
 **Error**: `UnboundLocalError: cannot access local variable 'time' where it is not associated with a value`
 
 **Solution**: Fixed in latest version - ensure no duplicate `import time` statements in `build_rag.py`
@@ -396,4 +620,13 @@ if not isinstance(metadata, dict):
 
 **Solution**: Check Git tracking logs, ensure `git diff` command works, verify commit SHAs in `last_commit.json`
 
-This comprehensive debug tools documentation should enable developers to effectively test, debug, and improve the RAG codebase QA tool, including the new incremental build system.
+### 🆕 6. Provider Switching Issues
+**Error**: Models not clearing when switching providers
+
+**Solution**: Ensure `clear_cache()` method is called during provider switching
+
+**Error**: Cache directory conflicts
+
+**Solution**: Each provider uses separate cache directories, no conflicts should occur
+
+This comprehensive debug tools documentation should enable developers to effectively test, debug, and improve the RAG codebase QA tool, including the new multi-provider system and incremental build system.
