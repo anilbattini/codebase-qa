@@ -51,6 +51,10 @@ if project_dir:
 st.sidebar.markdown("## 🔧 Advanced Options")
 st.sidebar.checkbox("Disable RAG (query LLM directly)", key="disable_rag")
 
+# Ensure debug_mode is defined
+if debug_mode is None:
+    debug_mode = False
+
 if not st.session_state.selected_project_type:
     ui.render_welcome_screen()
     st.stop()
@@ -120,25 +124,42 @@ else:
         # Protect the RAG build process
         try:
             ProcessManager.start_rag_build()
+            
             if is_incremental:
                 rag_manager.build_rag_index(
-                    project_dir, ollama_model, ollama_endpoint, 
-                    st.session_state.selected_project_type, st.empty(), 
+                    project_dir, ollama_model, ollama_endpoint,
+                    st.session_state.selected_project_type, st.empty(),
                     incremental=True, files_to_process=rebuild_info["files"]
                 )
             else:
                 rag_manager.build_rag_index(
-                    project_dir, ollama_model, ollama_endpoint, 
+                    project_dir, ollama_model, ollama_endpoint,
                     st.session_state.selected_project_type, st.empty()
                 )
+            
+            # CRITICAL FIX: Set the session state properly after successful build
             ProcessManager.finish_rag_build()
+            st.session_state["rag_built"] = True
+            st.session_state["build_in_progress"] = False
+            
+            # Clear any error states
+            if "build_error" in st.session_state:
+                del st.session_state["build_error"]
+            
             st.success("✅ RAG index built successfully!")
             log_highlight("app.py: RAG index build completed successfully")
+            
+            # # Force UI refresh to show chat interface
+            # st.rerun()
+            
         except Exception as e:
             ProcessManager.finish_rag_build()
+            st.session_state["build_in_progress"] = False
+            st.session_state["build_error"] = str(e)
             st.error(f"❌ Error building RAG index: {e}")
             log_highlight(f"app.py: RAG index build failed: {e}")
             st.exception(e)
+
     else:
         # No rebuild needed, but check if user wants to force rebuild
         if rebuild_info["reason"] == "no_changes":
@@ -158,9 +179,18 @@ else:
         if not rag_manager.is_ready():
             log_highlight("app.py: Loading existing RAG index")
             try:
-                rag_manager.load_existing_rag_index(project_dir, ollama_model, ollama_endpoint, st.session_state.selected_project_type)
+                with st.spinner("🔄 Loading existing RAG index... This may take a few seconds."):
+                    rag_manager.load_existing_rag_index(project_dir, st.session_state.selected_project_type)
+                
+                # CRITICAL FIX: Set session state to prevent reload loop
+                st.session_state["rag_loaded"] = True
+                st.session_state["rag_ready"] = True
+                
                 st.success("✅ RAG index loaded successfully!")
                 log_highlight("app.py: RAG index loaded successfully")
+                
+                # DO NOT call st.rerun() here - this causes the infinite loop
+                
             except Exception as e:
                 st.error(f"❌ Error loading RAG index: {e}")
                 log_highlight(f"app.py: RAG index load failed: {e}")
@@ -168,56 +198,76 @@ else:
         else:
             log_highlight("app.py: RAG index already loaded")
 
-# 4. Chat Interface
-st.title(f"Chat with your `{project_config.project_type}` codebase: {project_config.project_dir_name}")
-ui.render_chat_history()
 
-# Setup chat handler and input form
-if rag_manager.is_ready():
-    log_highlight("app.py: RAG system ready, setting up chat handler")
-    chat_handler = ChatHandler(
-        llm=rag_manager.setup_llm(ollama_model, ollama_endpoint),
-        project_config=project_config
-    )
+# 4. Chat Interface - Only show if RAG is ready and not in reload loop
+if not st.session_state.get("rag_loaded", False) and not rag_manager.is_ready():
+    # RAG not ready yet
+    st.info("🔄 Loading RAG system...")
     
-    query, submitted = ui.render_chat_input()
-
-    if submitted and query:
-        # Ensure thinking_logs is initialized before clearing
-        st.session_state.setdefault("thinking_logs", [])
-        st.session_state.thinking_logs.clear()
+elif rag_manager.is_ready() or st.session_state.get("rag_loaded", False):
+    # RAG is ready - show chat interface
+    st.title(f"Chat with your `{project_config.project_type}` codebase: {project_config.project_dir_name}")
+    
+    ui.render_chat_history()
+    
+    # Setup chat handler and input form
+    try:
+        if not st.session_state.get("qa_chain"):
+            # Lazy load QA chain only when needed
+            qa_chain = rag_manager.lazy_get_qa_chain(project_dir)
+            # CRITICAL FIX: Store qa_chain in session state
+            st.session_state["qa_chain"] = qa_chain
+        else:
+            qa_chain = st.session_state.get("qa_chain")
+            
+        llm = rag_manager.get_llm_model(project_dir)
+        chat_handler = ChatHandler(llm=llm, project_config=project_config)
         
-        with st.chat_message("user"):
-            st.markdown(query)
-
-        # Create a dedicated log placeholder for processing logs
-        log_placeholder = st.empty()
+        query, submitted = ui.render_chat_input()
         
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
+        if submitted and query:
+            # Process the query using the chat handler
+            with st.spinner("🤔 Thinking..."):
                 try:
-                    answer, reranked_docs, impact_files, metadata = chat_handler.process_query(
-                        query, st.session_state["qa_chain"], log_placeholder, debug_mode
+                    # Create a placeholder for logs
+                    log_placeholder = st.empty()
+                    
+                    # Process the query
+                    result = chat_handler.process_query(
+                        query=query,
+                        qa_chain=qa_chain,
+                        log_placeholder=log_placeholder,
+                        debug_mode=debug_mode
                     )
-                    if answer:
-                        # Clear the processing logs and display only the clean answer
-                        log_placeholder.empty()
-                        st.markdown(answer)
+                    
+                    if result:
+                        answer, sources, impact_files, metadata = result
+                        
+                        # Store in chat history
+                        if "chat_history" not in st.session_state:
+                            st.session_state.chat_history = []
+                        
+                        # Add to chat history with metadata
+                        chat_item = [query, answer, sources, impact_files, metadata]
+                        st.session_state.chat_history.append(chat_item)
+                        
+                        # Force UI refresh to show new chat history
+                        st.rerun()
                     else:
-                        log_placeholder.empty()
-                        st.error("❌ No answer generated. Please try again.")
+                        st.error("❌ Failed to process query. Please try again.")
+                        
                 except Exception as e:
-                    log_placeholder.empty()
                     st.error(f"❌ Error processing query: {e}")
-                    log_highlight(f"app.py: Chat processing error: {e}")
+                    log_highlight(f"app.py: Query processing error: {e}")
+            
+    except Exception as e:
+        st.error(f"❌ Error setting up chat: {e}")
+        log_highlight(f"app.py: Chat setup error: {e}")
         
-        # Store the answer in session state for persistence
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
-        
-        # Store in the expected format: (query, answer, source_docs, impact_files, metadata)
-        chat_item = (query, answer, reranked_docs, impact_files, metadata)
-        st.session_state.chat_history.append(chat_item)
+else:
+    # No RAG built yet
+    st.info("Please build the RAG index first using the sidebar.")
+
 
 # 5. Optional Debug Section
 if debug_mode:
