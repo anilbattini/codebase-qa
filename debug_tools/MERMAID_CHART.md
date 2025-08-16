@@ -3,56 +3,66 @@
 ## 🟦 RAG Index Build & Ready Flow
 ```mermaid
 flowchart TD
-    A[User selects project directory, project type, model, and endpoint] --> B[Sidebar renders inputs Handles validation and warnings]
+    A[User selects project directory, project type, model provider, and endpoint] --> B[Sidebar renders inputs Handles validation and warnings]
     B --> C[Initialize session state for retriever and QA chain]
     C --> D[Apply project type and config Load file extensions and chunking rules]
-    D --> E{Should rebuild index? Check DB, tracking, and file changes}
+    D --> E[Initialize Model Provider Ollama or Hugging Face]
+    E --> F{Should rebuild index? Check DB, tracking, and file changes}
     
-    E -->|No Database| F1[Full Rebuild: Clean database directory]
-    E -->|No Tracking| F1
-    E -->|Files Changed| F2[Incremental Rebuild: Process only changed files]
-    E -->|No Changes| F3[No Rebuild: Load existing index]
+    F -->|No Database| G1[Full Rebuild: Clean database directory]
+    F -->|No Tracking| G1
+    F -->|Files Changed| G2[Incremental Rebuild: Process only changed files]
+    F -->|No Changes| G3[No Rebuild: Load existing index]
     
-    F1 --> G1[Start Full RAG Build Workflow]
-    F2 --> G2[Start Incremental RAG Build Workflow]
-    F3 --> S[Load existing RAG index from disk]
+    G1 --> H1[Start Full RAG Build Workflow]
+    G2 --> H2[Start Incremental RAG Build Workflow]
+    G3 --> S[Load existing RAG index from disk]
     
-    G1 --> H1[Clean existing vector DB Clear session state]
-    G2 --> H2[Preserve existing database Process changed files only]
+    H1 --> I1[Clean existing vector DB Clear session state]
+    H2 --> I2[Preserve existing database Process changed files only]
     
-    H1 --> I[Scan ALL files and apply chunking]
-    H2 --> I2[Scan CHANGED files and apply chunking]
+    I1 --> J[Scan ALL files and apply chunking]
+    I2 --> J2[Scan CHANGED files and apply chunking]
     
-    I --> J[Extract semantic metadata]
-    I2 --> J
+    J --> K[Extract semantic metadata]
+    J2 --> K
     
-    J --> K[Generate chunk fingerprints]
-    K --> L[Summarize chunks for relevance]
-    L --> M[Build code relationship map]
-    M --> N[Create hierarchical index]
-    N --> O[Sanitize chunks for embedding]
-    O --> P[Embed chunks via Ollama API]
-    P --> Q1[Store embeddings in NEW Chroma DB]
-    P --> Q2[Update existing Chroma DB with new documents]
+    K --> L[Generate chunk fingerprints]
+    L --> M[Summarize chunks for relevance]
+    M --> N[Build code relationship map]
+    N --> O[Create hierarchical index]
+    O --> P[Sanitize chunks for embedding]
+    P --> Q[Embed chunks via Model Provider API]
+    Q --> R1[Store embeddings in NEW Chroma DB]
+    Q --> R2[Update existing Chroma DB with new documents]
     
-    Q1 --> R[Set retriever and QA chain in session state]
-    Q2 --> R
-    R --> Z[RAG system is ready for queries]
+    R1 --> S1[Set retriever and QA chain in session state]
+    R2 --> S1
+    S1 --> Z[RAG system is ready for queries]
     
     S --> T[Ensure embedding model consistency Restore retriever and QA chain]
     T --> Z
     
     %% Force Rebuild Flow
-    F3 --> U{User wants Force Rebuild?}
+    G3 --> U{User wants Force Rebuild?}
     U -->|Yes| V[Force Rebuild: Clear all data and rebuild]
     U -->|No| T
-    V --> G1
+    V --> H1
     
     %% Enhanced Git Tracking
-    E --> W[Enhanced Git Tracking: git diff + working directory changes]
+    F --> W[Enhanced Git Tracking: git diff + working directory changes]
     W --> X{Detect changes between commits}
-    X -->|Changes found| F2
-    X -->|No changes| F3
+    X -->|Changes found| G2
+    X -->|No changes| G3
+    
+    %% Model Provider Integration
+    E --> Y[Model Provider Selection]
+    Y --> Y1[Ollama Provider: Local LLM server]
+    Y --> Y2[Hugging Face Provider: Local open-source models]
+    Y1 --> Z1[Initialize Ollama endpoint and models]
+    Y2 --> Z2[Initialize Hugging Face cache and models]
+    Z1 --> Q
+    Z2 --> Q
 ```
 
 ## 🟩 User Query & Answer Flow
@@ -63,13 +73,54 @@ flowchart TD
     B --> C[System checks if RAG pipeline is ready]
     C --> D[Intent classifier analyzes user's query]
     D --> E[Classifier extracts context hints from query]
-    E --> F[Retriever fetches relevant documents based on query and hints]
-    F --> G[Chat handler combines query and documents using RetrievalQA]
-    G --> H[RAG pipeline processes and generates final response]
-    H --> I[Chat UI renders response in conversation history]
+    E --> F[Lazy load retriever if needed]
+    F --> G[Retriever fetches relevant documents based on query and hints]
+    G --> H[Chat handler combines query and documents using RetrievalQA]
+    H --> I[Lazy load QA chain and LLM model if needed]
+    I --> J[RAG pipeline processes and generates final response]
+    J --> K[Chat UI renders response in conversation history]
+    K --> L[Store chat history with metadata in session state]
 ```
 
-## 🟨 Enhanced Decision Flow for Rebuild Logic
+## 🟨 Model Provider Management Flow
+
+```mermaid
+flowchart TD
+    A[User selects model provider in sidebar] --> B[Model Provider dropdown: Ollama or Hugging Face]
+    B --> C{Provider type selected?}
+    
+    C -->|Ollama| D[Initialize Ollama Provider]
+    C -->|Hugging Face| E[Initialize Hugging Face Provider]
+    
+    D --> F[Set Ollama endpoint and model configuration]
+    E --> G[Create custom cache directory Set environment variables]
+    
+    F --> H[Check Ollama availability via HTTP endpoint]
+    G --> I[Check Hugging Face model availability and cache status]
+    
+    H --> J{Ollama available?}
+    I --> K{Hugging Face models available?}
+    
+    J -->|Yes| L[Set Ollama as current provider]
+    J -->|No| M[Fallback to Hugging Face or show error]
+    
+    K -->|Yes| N[Set Hugging Face as current provider]
+    K -->|No| O[Download models to custom cache]
+    
+    L --> P[Provider ready for use]
+    N --> P
+    O --> P
+    
+    %% Provider Switching
+    P --> Q{User wants to switch provider?}
+    Q -->|Yes| R[Clear previous provider cache]
+    R --> S[Initialize new provider]
+    S --> P
+    
+    Q -->|No| T[Continue with current provider]
+```
+
+## 🟪 Enhanced Decision Flow for Rebuild Logic
 
 ```mermaid
 flowchart TD
@@ -99,34 +150,77 @@ flowchart TD
     N --> Q[Create New Vector Database]
     O --> R[Update Existing Vector Database]
     
-    Q --> S[RAG System Ready]
+    %% Model Provider Integration
+    Q --> S[Initialize Model Provider for embedding]
     R --> S
     P --> S
+    
+    S --> T{Provider type?}
+    T -->|Ollama| U[Use Ollama API for embeddings]
+    T -->|Hugging Face| V[Use cached Hugging Face models]
+    
+    U --> W[Store embeddings in Chroma DB]
+    V --> W
+    W --> X[RAG system ready]
 ```
 
-## 🟪 Incremental vs Full Build Comparison
+## 🟦 Model Caching and Performance Flow
 
 ```mermaid
-flowchart LR
-    subgraph "Full Build"
-        A1[Clean Database Directory]
-        A2[Process ALL Files]
-        A3[Create New Vector DB]
-        A4[Update All Tracking]
-    end
+flowchart TD
+    A[Model Provider Request] --> B{Model cached in memory?}
     
-    subgraph "Incremental Build"
-        B1[Preserve Database]
-        B2[Process CHANGED Files Only]
-        B3[Update Existing Vector DB]
-        B4[Update Changed File Tracking]
-    end
+    B -->|Yes| C[Return cached model instance]
+    B -->|No| D[Load model from disk or download]
     
-    subgraph "Decision Factors"
-        C1[No Database → Full]
-        C2[No Tracking → Full]
-        C3[Files Changed → Incremental]
-        C4[No Changes → Load Existing]
-        C5[Force Rebuild → Full]
-    end
+    D --> E{Provider type?}
+    E -->|Ollama| F[Initialize Ollama embeddings/LLM]
+    E -->|Hugging Face| G[Initialize Hugging Face models]
+    
+    F --> H[Cache Ollama model instance]
+    G --> I[Cache Hugging Face model instance]
+    
+    H --> J[Return model for use]
+    I --> J
+    
+    %% Cache Management
+    J --> K{Provider switching requested?}
+    K -->|Yes| L[Clear all cached models]
+    L --> M[Free memory and resources]
+    M --> N[Initialize new provider]
+    
+    K -->|No| O[Continue using cached models]
+    
+    %% Performance Benefits
+    C --> P[Fast response: No model loading]
+    J --> Q[First use: Model loaded and cached]
+    O --> R[Subsequent uses: Fast cached access]
 ```
+
+## 🔄 Key System Improvements
+
+### **Multi-Provider Architecture**
+- **Abstract Interface**: ModelProvider ABC for consistent provider interface
+- **Provider Implementations**: OllamaProvider and HuggingFaceProvider
+- **Factory Pattern**: ModelProviderFactory for creating provider instances
+- **Global Management**: Centralized provider switching and management
+
+### **Model Caching System**
+- **In-Memory Caching**: Prevents model reloading on every access
+- **Lazy Loading**: Models loaded only when actually needed
+- **Cache Management**: Automatic cache clearing during provider switching
+- **Custom Cache Directory**: Dedicated Hugging Face cache location
+
+### **Enhanced RAG Management**
+- **Lazy Loading**: Retriever and QA chain loaded only when needed
+- **Incremental Builds**: Smart rebuild detection and processing
+- **Git Tracking**: Enhanced change detection with commit differences
+- **User Experience**: Clear progress indicators and confirmation flows
+
+### **Performance Optimizations**
+- **Model Caching**: Prevents "Loading checkpoint shards" messages
+- **Lazy Initialization**: Components initialized only when needed
+- **Memory Management**: Automatic cache clearing to prevent memory issues
+- **Provider Switching**: Seamless switching without conflicts
+
+This enhanced Mermaid chart flow provides a comprehensive visual representation of the new multi-provider system, model caching, and incremental build capabilities while maintaining backward compatibility with existing Ollama functionality.
