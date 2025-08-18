@@ -9,3 +9,7 @@ torch
 transformers
 sentence-transformers
 requests
+accelerate
+huggingface-hub
+datasets
+tokenizers
