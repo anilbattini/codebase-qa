@@ -225,35 +225,6 @@ class HuggingFaceProvider(ModelProvider):
             raise Exception(f"Failed to download {model_type} {model_name}: {e}")
 
 
-class LocalHuggingFaceEmbeddings:
-    """Wrapper class for Hugging Face embedding models with proper interface."""
-    def __init__(self, model, model_name: str):
-        self.model = model
-        self.model_name = model_name
-        log_to_sublog(".", "model_provider.log", f"✅ Embedding wrapper created for: {model_name}")
-    
-    def embed_documents(self, texts):
-        try:
-            self.model.eval()
-            with torch.no_grad():
-                embeddings = self.model.encode(texts, convert_to_tensor=False, show_progress_bar=False)
-                return embeddings.tolist() if hasattr(embeddings, 'tolist') else embeddings
-        except Exception as e:
-            log_to_sublog(".", "model_provider.log", f"❌ Error embedding documents: {e}")
-            raise RuntimeError(f"Embedding documents failed: {e}")
-    
-    def embed_query(self, text):
-        try:
-            self.model.eval()
-            with torch.no_grad():
-                embedding = self.model.encode([text], convert_to_tensor=False, show_progress_bar=False)
-                result = embedding[0] if isinstance(embedding, (list, tuple)) and len(embedding) > 0 else embedding
-                return result.tolist() if hasattr(result, 'tolist') else result
-        except Exception as e:
-            log_to_sublog(".", "model_provider.log", f"❌ Error embedding query: {e}")
-            raise RuntimeError(f"Embedding query failed: {e}")
-    
-
     """
     Updated model_provider.py with Meta Tensor Fix
 
@@ -285,41 +256,70 @@ class LocalHuggingFaceEmbeddings:
                     # Use device="cpu" to avoid meta tensor issues
                     model = SentenceTransformer(model_name, cache_folder=self.cache_dir, device="cpu")
                     log_to_sublog(".", "model_provider.log", f"✅ Successfully loaded cached embedding model: {model_name}")
-                    self._downloaded_models.add(model_name)
+                    # self._downloaded_models.add(model_name)
                     
                     # CRITICAL FIX: Cache the model instance in memory
-                    self._embedding_instances[model_name] = model
-                    log_to_sublog(".", "model_provider.log", f"✅ Cached embedding model in memory: {model_name}")
-                    return model
+                    # self._embedding_instances[model_name] = model
+                    # log_to_sublog(".", "model_provider.log", f"✅ Cached embedding model in memory: {model_name}")
+                    # return model
                 except Exception as load_error:
                     log_to_sublog(".", "model_provider.log", f"⚠️ Cached model load failed, will re-download: {load_error}")
+            else:
             
-            log_to_sublog(".", "model_provider.log", f"📥 Downloading embedding model: {model_name} to {self.cache_dir}")
-            
-            try:
-                # Try with explicit CPU device first to avoid meta tensor issues
-                model = SentenceTransformer(model_name, cache_folder=self.cache_dir, device="cpu")
-                log_to_sublog(".", "model_provider.log", f"✅ Downloaded embedding model: {model_name} to {self.cache_dir}")
-            except Exception as cpu_error:
-                log_to_sublog(".", "model_provider.log", f"⚠️ CPU device failed, trying default: {cpu_error}")
+                log_to_sublog(".", "model_provider.log", f"📥 Downloading embedding model: {model_name} to {self.cache_dir}")
                 try:
-                    # Fallback to default device handling
-                    model = SentenceTransformer(model_name, cache_folder=self.cache_dir)
-                    log_to_sublog(".", "model_provider.log", f"✅ Downloaded embedding model: {model_name} to {self.cache_dir} (default device)")
-                except Exception as default_error:
-                    log_to_sublog(".", "model_provider.log", f"⚠️ Default device failed, trying minimal config: {default_error}")
-                    # Last resort: minimal configuration without device specification
-                    model = SentenceTransformer(model_name, cache_folder=self.cache_dir)
-                    log_to_sublog(".", "model_provider.log", f"✅ Downloaded embedding model: {model_name} to {self.cache_dir} (minimal config)")
+                    # Try with explicit CPU device first to avoid meta tensor issues
+                    model = SentenceTransformer(model_name, cache_folder=self.cache_dir, device="cpu")
+                    log_to_sublog(".", "model_provider.log", f"✅ Downloaded embedding model: {model_name} to {self.cache_dir}")
+                except Exception as cpu_error:
+                    log_to_sublog(".", "model_provider.log", f"⚠️ CPU device failed, trying default: {cpu_error}")
+                    try:
+                        # Fallback to default device handling
+                        model = SentenceTransformer(model_name, cache_folder=self.cache_dir)
+                        log_to_sublog(".", "model_provider.log", f"✅ Downloaded embedding model: {model_name} to {self.cache_dir} (default device)")
+                    except Exception as default_error:
+                        log_to_sublog(".", "model_provider.log", f"⚠️ Default device failed, trying minimal config: {default_error}")
+                        # Last resort: minimal configuration without device specification
+                        model = SentenceTransformer(model_name, cache_folder=self.cache_dir)
+                        log_to_sublog(".", "model_provider.log", f"✅ Downloaded embedding model: {model_name} to {self.cache_dir} (minimal config)")
             
-            # CRITICAL FIX: Cache the model instance in memory
-            self._embedding_instances[model_name] = model
-            self._downloaded_models.add(model_name)
-            log_to_sublog(".", "model_provider.log", f"✅ Cached embedding model in memory: {model_name}")
+            # # CRITICAL FIX: Cache the model instance in memory
+            # self._embedding_instances[model_name] = model
+            # self._downloaded_models.add(model_name)
+            # log_to_sublog(".", "model_provider.log", f"✅ Cached embedding model in memory: {model_name}")
+            
+            class LocalHuggingFaceEmbeddings:
+                """Wrapper class for Hugging Face embedding models with proper interface."""
+                def __init__(self, model, model_name: str):
+                    self.model = model
+                    self.model_name = model_name
+                    log_to_sublog(".", "model_provider.log", f"✅ Embedding wrapper created for: {model_name}")
+                
+                def embed_documents(self, texts):
+                    try:
+                        self.model.eval()
+                        with torch.no_grad():
+                            embeddings = self.model.encode(texts, convert_to_tensor=False, show_progress_bar=False)
+                            return embeddings.tolist() if hasattr(embeddings, 'tolist') else embeddings
+                    except Exception as e:
+                        log_to_sublog(".", "model_provider.log", f"❌ Error embedding documents: {e}")
+                        raise RuntimeError(f"Embedding documents failed: {e}")
+                
+                def embed_query(self, text):
+                    try:
+                        self.model.eval()
+                        with torch.no_grad():
+                            embedding = self.model.encode([text], convert_to_tensor=False, show_progress_bar=False)
+                            result = embedding[0] if isinstance(embedding, (list, tuple)) and len(embedding) > 0 else embedding
+                            return result.tolist() if hasattr(result, 'tolist') else result
+                    except Exception as e:
+                        log_to_sublog(".", "model_provider.log", f"❌ Error embedding query: {e}")
+                        raise RuntimeError(f"Embedding query failed: {e}")
             
             # Create and return the embedding wrapper
             embedding_wrapper = LocalHuggingFaceEmbeddings(model, model_name)
             self._embedding_instances[model_name] = embedding_wrapper
+            self._downloaded_models.add(model_name)
             return embedding_wrapper
             
         except ImportError:
@@ -396,6 +396,7 @@ class LocalHuggingFaceEmbeddings:
             # Create and cache the LLM instance
             llm_instance = LocalHuggingFaceLLM(model_name, self.cache_dir)
             self._llm_instances[model_name] = llm_instance
+            self._downloaded_models.add(model_name)
             log_to_sublog(".", "model_provider.log", f"✅ Cached LLM model in memory: {model_name}")
             return llm_instance
             
