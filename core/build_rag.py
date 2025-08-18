@@ -472,17 +472,18 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
         log_to_sublog(project_dir, "rag_manager.log", f"Processing {len(sanitized_docs)} documents in {total_batches} batches...")
         
         # Check if Ollama is responsive before starting embedding computation
-        try:
-            import requests
-            response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
-            if response.status_code != 200:
-                raise Exception(f"Ollama not responding: {response.status_code}")
-            log_to_sublog(project_dir, "rag_manager.log", "Ollama is responsive, starting embedding computation...")
-        except Exception as e:
-            error_msg = f"Ollama not available at {ollama_endpoint}: {e}"
-            st.error(f"❌ {error_msg}")
-            log_to_sublog(project_dir, "rag_manager.log", error_msg)
-            raise Exception(error_msg)
+        if provider_type == "ollama":
+            try:
+                import requests
+                response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
+                if response.status_code != 200:
+                    raise Exception(f"Ollama not responding: {response.status_code}")
+                log_to_sublog(project_dir, "rag_manager.log", "Ollama is responsive, starting embedding computation...")
+            except Exception as e:
+                error_msg = f"Ollama not available at {ollama_endpoint}: {e}"
+                st.error(f"❌ {error_msg}")
+                log_to_sublog(project_dir, "rag_manager.log", error_msg)
+                raise Exception(error_msg)
         
         # Handle incremental vs full build
         if incremental and os.path.exists(os.path.join(project_config.get_db_dir(), "chroma.sqlite3")):
