@@ -290,32 +290,67 @@ class HuggingFaceProvider(ModelProvider):
             
             class LocalHuggingFaceEmbeddings:
                 """Wrapper class for Hugging Face embedding models with proper interface."""
+                
                 def __init__(self, model, model_name: str):
                     self.model = model
                     self.model_name = model_name
                     log_to_sublog(".", "model_provider.log", f"✅ Embedding wrapper created for: {model_name}")
-                
+
                 def embed_documents(self, texts):
                     try:
                         self.model.eval()
                         with torch.no_grad():
+                            # Ensure texts is a list
+                            if isinstance(texts, str):
+                                texts = [texts]
+                            
+                            # Get embeddings - this returns numpy array or list
                             embeddings = self.model.encode(texts, convert_to_tensor=False, show_progress_bar=False)
-                            return embeddings.tolist() if hasattr(embeddings, 'tolist') else embeddings
+                            
+                            # Convert to proper format: list of lists (each inner list is one document's embedding)
+                            if hasattr(embeddings, 'tolist'):
+                                result = embeddings.tolist()
+                            else:
+                                result = embeddings
+                            
+                            # Ensure we have a list of lists format
+                            if len(texts) == 1 and isinstance(result[0], (int, float)):
+                                # Single document case: wrap the single embedding in a list
+                                result = [result]
+                            
+                            log_to_sublog(".", "model_provider.log", f"✅ Embedded {len(texts)} documents, shape: {len(result)}x{len(result[0]) if result else 0}")
+                            return result
+                            
                     except Exception as e:
                         log_to_sublog(".", "model_provider.log", f"❌ Error embedding documents: {e}")
                         raise RuntimeError(f"Embedding documents failed: {e}")
-                
+
                 def embed_query(self, text):
                     try:
                         self.model.eval()
                         with torch.no_grad():
-                            embedding = self.model.encode([text], convert_to_tensor=False, show_progress_bar=False)
-                            result = embedding[0] if isinstance(embedding, (list, tuple)) and len(embedding) > 0 else embedding
-                            return result.tolist() if hasattr(result, 'tolist') else result
+                            # Get embedding for single text - this returns numpy array or list
+                            embedding = self.model.encode(text, convert_to_tensor=False, show_progress_bar=False)
+                            
+                            # Convert to flat list format (single embedding vector)
+                            if hasattr(embedding, 'tolist'):
+                                result = embedding.tolist()
+                            else:
+                                result = embedding
+                            
+                            # Ensure result is a flat list, not nested
+                            if isinstance(result, list) and len(result) > 0 and isinstance(result, list):
+                                # If it's nested, flatten it (take first element if it's a list of one embedding)
+                                result = result
+                            
+                            log_to_sublog(".", "model_provider.log", f"✅ Embedded query, dimension: {len(result) if isinstance(result, list) else 'unknown'}")
+                            return result
+                            
                     except Exception as e:
                         log_to_sublog(".", "model_provider.log", f"❌ Error embedding query: {e}")
                         raise RuntimeError(f"Embedding query failed: {e}")
-            
+
+
             # Create and return the embedding wrapper
             embedding_wrapper = LocalHuggingFaceEmbeddings(model, model_name)
             self._embedding_instances[model_name] = embedding_wrapper
