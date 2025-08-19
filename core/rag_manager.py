@@ -3,7 +3,7 @@ import shutil
 import streamlit as st
 from typing import Optional, Tuple, Any
 
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from langchain.schema import BaseRetriever
 
@@ -295,7 +295,6 @@ class RagManager:
         """Load existing RAG index without rebuilding (no LLM yet)."""
         log_highlight("RagManager.load_existing_rag_index")
 
-        from langchain_community.vectorstores import Chroma
         from build_rag import get_consistent_embedding_model
 
         try:
