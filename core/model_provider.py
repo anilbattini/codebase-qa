@@ -375,36 +375,46 @@ class HuggingFaceProvider(ModelProvider):
         try:
             from transformers import AutoTokenizer, AutoModelForCausalLM
             import torch
-
-            self._ensure_model_downloaded(model_name, "llm")
-
             from langchain_core.language_models.llms import LLM
             from langchain_core.callbacks.manager import CallbackManagerForLLMRun
             from typing import Any, List, Optional
 
+            self._ensure_model_downloaded(model_name, "llm")
+
             class LocalHuggingFaceLLM(LLM):
-                def __init__(self, model_name: str, cache_dir: str):
-                    super().__init__()
-                    self.model_name = model_name
-                    self.cache_dir = cache_dir
-                    log_to_sublog(".", "model_provider.log", f"🔄 Loading LLM model: {model_name}")
+                # Declare all attributes as class fields for Pydantic
+                model_name: str
+                cache_dir: str
+                _tokenizer: Any = None
+                _model: Any = None
+                
+                def __init__(self, model_name: str, cache_dir: str, **kwargs):
+                    super().__init__(model_name=model_name, cache_dir=cache_dir, **kwargs)
                     
-                    # Load tokenizer and model
+                    log_to_sublog(".", "model_provider.log", f"🔄 Loading LLM model: {model_name}")
+                    log_to_sublog(".", "model_provider.log", f"⏳ This may take 30-60 seconds for large models...")
+                    
+                    # Load tokenizer and model (this is where "Loading checkpoint shards" appears)
                     self._tokenizer = AutoTokenizer.from_pretrained(
                         model_name, cache_dir=cache_dir, trust_remote_code=True
                     )
+                    
+                    log_to_sublog(".", "model_provider.log", f"📥 Loading model weights (checkpoint shards)...")
+                    
                     self._model = AutoModelForCausalLM.from_pretrained(
                         model_name,
                         cache_dir=cache_dir,
-                        torch_dtype=torch.float32,  # Use float32 for CPU compatibility
-                        device_map="cpu",  # Force CPU usage
+                        torch_dtype=torch.float32,
+                        device_map="cpu",
                         low_cpu_mem_usage=True,
                         trust_remote_code=True
                     )
+                    
                     if self._tokenizer.pad_token is None:
                         self._tokenizer.pad_token = self._tokenizer.eos_token
                     
-                    log_to_sublog(".", "model_provider.log", f"✅ LLM model loaded: {model_name}")
+                    log_to_sublog(".", "model_provider.log", f"✅ LLM model loaded successfully: {model_name}")
+
 
                 @property
                 def _llm_type(self) -> str:
@@ -428,8 +438,9 @@ class HuggingFaceProvider(ModelProvider):
                         log_to_sublog(".", "model_provider.log", f"❌ Error in LLM generation: {e}")
                         return f"Error generating response: {str(e)}"
 
+
             # Create and cache the LLM instance
-            llm_instance = LocalHuggingFaceLLM(model_name, self.cache_dir)
+            llm_instance = LocalHuggingFaceLLM(model_name=model_name, cache_dir=self.cache_dir)
             self._llm_instances[model_name] = llm_instance
             self._downloaded_models.add(model_name)
             log_to_sublog(".", "model_provider.log", f"✅ Cached LLM model in memory: {model_name}")

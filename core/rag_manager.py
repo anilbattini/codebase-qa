@@ -349,14 +349,16 @@ class RagManager:
 
         retriever = st.session_state.get("retriever")
         if not retriever:
-            # CRITICAL FIX: Load retriever lazily only when needed
             retriever = self.get_retriever(project_dir, st.session_state.get("selected_project_type"))
             if not retriever:
                 raise RuntimeError("Retriever not available. Build or load RAG first.")
 
-        # CRITICAL FIX: Only load LLM when actually creating QA chain
-        log_to_sublog(project_dir, "rag_manager.log", "🔄 Creating QA chain - loading LLM model...")
+        # Add loading indicator for LLM loading
+        log_to_sublog(project_dir, "rag_manager.log", "🔄 Loading LLM model for QA chain...")
+        
+        # This is where the second "Loading checkpoint shards" happens
         llm = self.get_llm_model(project_dir)
+        
         from langchain.chains import RetrievalQA
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
@@ -367,6 +369,7 @@ class RagManager:
         st.session_state["qa_chain"] = qa_chain
         log_to_sublog(project_dir, "rag_manager.log", "✅ QA chain created and cached")
         return qa_chain
+
 
     def preload_models(self, project_dir: str):
         """Preload models when explicitly requested (e.g., during RAG building)."""
