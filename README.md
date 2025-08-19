@@ -227,7 +227,7 @@ This project is licensed under the MIT License. See the LICENSE file for details
 
 ## Backlog
 
-- Add additional model provider, Huggingface embedding and llm model support along side ollama.
+- Add additional model provider, Huggingface embedding and llm model support along side ollama. (WIP)
 - Create organic building of confidence score
 - Sidebar configurations to choose the model provider with model types
 - Fix rebuild db or index logic
@@ -235,6 +235,12 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Show alternate optional answers along with highly ranked answer (Adv)
 - Include PDFs and WebUrls support to go though and answer questions.
 - Add session memory to add followup questions feature.(Adv)
+
+## WIP Backlog notes
+
+- both huggingface and ollama provider support is added. Ollama is covered end to end. 
+- As of huggingface is good with building RAG, but retrieval is not working with Huggingface LLM.
+- Thinking of not pursuing this problem, since we are going to use spirare instead of local LLM.
 
 ---
 
