@@ -211,17 +211,22 @@ elif rag_manager.is_ready() or st.session_state.get("rag_loaded", False):
     ui.render_chat_history()
     
     # Setup chat handler and input form
+    # Around line 200 in your app.py, replace this section:
     try:
         if not st.session_state.get("qa_chain"):
             # Lazy load QA chain only when needed
-            qa_chain = rag_manager.lazy_get_qa_chain(project_dir)
-            # CRITICAL FIX: Store qa_chain in session state
-            st.session_state["qa_chain"] = qa_chain
+            with st.spinner("🤖 Loading LLM model (this may take 30-60 seconds)..."):
+                qa_chain = rag_manager.lazy_get_qa_chain(project_dir)
+                st.session_state["qa_chain"] = qa_chain
         else:
             qa_chain = st.session_state.get("qa_chain")
-            
-        llm = rag_manager.get_llm_model(project_dir)
-        chat_handler = ChatHandler(llm=llm, project_config=project_config)
+
+        with st.spinner("🤖 Preparing chat system..."):
+            llm = rag_manager.get_llm_model(project_dir)
+            chat_handler = ChatHandler(llm=llm, project_config=project_config)
+        
+        # Show success message
+        st.success("✅ LLM models loaded and ready!")
         
         query, submitted = ui.render_chat_input()
         
