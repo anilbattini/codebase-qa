@@ -16,6 +16,7 @@ from config import ProjectConfig
 from model_config import model_config
 from metadata_extractor import MetadataExtractor
 from hierarchical_indexer import HierarchicalIndexer
+from cross_reference_builder import CrossReferenceBuilder
 
 from logger import setup_global_logger, log_to_sublog, log_highlight
 
@@ -286,6 +287,37 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
         st.session_state.thinking_logs.append("💾 Updated file tracking information")
         update_logs(log_placeholder)
         log_to_sublog(project_dir, "rag_manager.log", "Updated file tracking information")
+        
+
+    # Add this section after hierarchical indexer (around line 360):
+    # Build cross-references for Level 2-4 capabilities
+    if documents:
+        st.session_state.thinking_logs.append("🔗 Building cross-reference maps...")
+        update_logs(log_placeholder)
+        logger.info("Starting cross-reference building")
+        log_to_sublog(project_dir, "rag_manager.log", "Building cross-reference maps...")
+        
+        try:
+            cross_ref_builder = CrossReferenceBuilder(project_config, project_dir)
+            cross_references = cross_ref_builder.build_cross_references(documents)
+            cross_ref_builder.save_cross_references(cross_references)
+            
+            st.session_state.thinking_logs.append("✅ Cross-reference maps created successfully!")
+            update_logs(log_placeholder)
+            logger.info("Cross-reference building completed")
+            log_to_sublog(project_dir, "rag_manager.log", "Cross-reference maps created successfully")
+            
+            # Log key statistics
+            stats = cross_references.get('statistics', {})
+            log_to_sublog(project_dir, "rag_manager.log", f"Cross-reference stats: {stats}")
+            
+        except Exception as e:
+            st.session_state.thinking_logs.append(f"⚠️ Warning: Cross-reference building failed: {e}")
+            update_logs(log_placeholder)
+            logger.warning(f"Cross-reference building failed: {e}")
+            log_to_sublog(project_dir, "rag_manager.log", f"Warning: Cross-reference building failed: {e}")
+            # Continue without cross-references - don't break the build
+
 
     # Build relationships and hierarchy
     if documents:
