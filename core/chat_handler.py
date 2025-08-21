@@ -9,9 +9,11 @@ from logger import log_highlight, log_to_sublog
 
 class ChatHandler:
     """
-    Main user-question handler: intent classification, query rewriting, impact analysis, 
+    Main user-question handler: intent classification, query rewriting, impact analysis,
     retrieve/rerank by semantic anchors, hierarchy-aware context build, answer aggregation.
+    🆕 Now with Phase 3 enhanced context capabilities.
     """
+
     def __init__(self, llm, project_config, project_dir="."):
         self.llm = llm
         self.project_config = project_config
@@ -39,161 +41,192 @@ class ChatHandler:
         return prompt | self.llm
 
     def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):
-        """Enhanced query processing with intent classification, rewriting, hierarchy-aware context, and RAG support."""
+        """
+        🔧 COMPLETE: Enhanced query processing with Phase 3 context + full backward compatibility.
+        Returns: (answer, reranked_docs, impact_files, metadata)
+        """
         log_highlight("ChatHandler.process_query")
         
         # Ensure thinking_logs is initialized
         st.session_state.setdefault("thinking_logs", [])
-        
         st.session_state.thinking_logs.append("🧠 Starting enhanced query processing...")
         update_logs(log_placeholder)
         log_to_sublog(self.project_dir, "chat_handler.log", f"Starting query processing: {query}")
 
-        # 1. Intent classification
-        intent, confidence = self.query_intent_classifier.classify_intent(query)
-        st.session_state.thinking_logs.append(f"🎯 Detected intent: {intent} (confidence: {confidence:.2f})")
-        update_logs(log_placeholder)
-        log_to_sublog(self.project_dir, "chat_handler.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
-        if debug_mode:
-            st.info(f"🎯 **Query Intent**: {intent} (confidence: {confidence:.2f})")
-
-        disable_rag = st.session_state.get("disable_rag", False)
-
-        if disable_rag:
-            st.session_state.thinking_logs.append("⚙️ RAG is disabled – sending query directly to LLM.")
+        try:
+            # Phase 1: Intent classification  
+            intent, confidence = self.query_intent_classifier.classify_intent(query)
+            st.session_state.thinking_logs.append(f"🎯 Detected intent: {intent} (confidence: {confidence:.2f})")
             update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", "RAG disabled - sending query directly to LLM")
-            # Minimal context path: skip rewriting, retrieval, context building
-            rewritten = query
-            impact_files, impact_context = [], ""
-            enhanced_context = ""
-        else:
-            # 2. Enhanced query rewriting
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
+
+            if debug_mode:
+                st.info(f"🎯 **Query Intent**: {intent} (confidence: {confidence:.2f})")
+
+            disable_rag = st.session_state.get("disable_rag", False)
+            
+            if disable_rag:
+                st.session_state.thinking_logs.append("⚙️ RAG is disabled – sending query directly to LLM.")
+                update_logs(log_placeholder)
+                log_to_sublog(self.project_dir, "chat_handler.log", "RAG disabled - sending query directly to LLM")
+                
+                # Direct LLM call without RAG
+                result = qa_chain.invoke({"query": query})
+                answer = result.get("result", "Sorry, I couldn't generate an answer.")
+                return answer, [], [], {"intent": intent, "confidence": confidence}
+
+            # Phase 2: Enhanced query rewriting
             rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
             log_to_sublog(self.project_dir, "chat_handler.log", f"Query rewritten: '{query}' -> '{rewritten}'")
 
-            # 3. Impact analysis (if applicable)
+            # Phase 3: Impact analysis (if applicable)
             impact_files, impact_context = self._analyze_impact_with_intent(query, intent, log_placeholder)
             if impact_files:
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Impact analysis: {len(impact_files)} files affected")
 
-            # 4. Prepare retrieval hints
-            query_hints = self.query_intent_classifier.get_query_context_hints(intent, query)
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Query hints: {query_hints}")
-
-            # 5. Retrieve documents
+            # Phase 4: Document retrieval with fallback strategy
             st.session_state.thinking_logs.append("📖 Performing intelligent document retrieval...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Starting document retrieval...")
-            retriever = st.session_state.get("retriever")
 
+            retriever = st.session_state.get("retriever")
             if not retriever:
                 st.error("❌ No retriever found. Please rebuild the RAG index before querying.")
                 log_to_sublog(self.project_dir, "chat_handler.log", "ERROR: No retriever found")
-                return None, [], []
+                return "Please rebuild the RAG index before querying.", [], [], {}
 
-            try:
-                # Try with rewritten query first
-                retrieved_docs = retriever.invoke(rewritten)
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with rewritten query")
-                
-                # If no results, try with original query as fallback
-                if not retrieved_docs:
-                    st.session_state.thinking_logs.append("⚠️ No results with rewritten query, trying original...")
-                    update_logs(log_placeholder)
-                    retrieved_docs = retriever.invoke(query)
-                    log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with original query")
-                
-                # If still no results, try with key terms
-                if not retrieved_docs:
-                    st.session_state.thinking_logs.append("⚠️ No results, trying with key terms...")
-                    update_logs(log_placeholder)
-                    key_terms = self._extract_key_terms(query)
-                    if key_terms:
-                        key_query = " ".join(key_terms)
-                        retrieved_docs = retriever.invoke(key_query)
-                        log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with key terms: {key_terms}")
-                
-            except Exception as e:
-                st.error(f"❌ Retrieval failed: {e}")
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieval failed: {e}")
-                return "Sorry, I couldn't retrieve supporting documents.", [], [], {}
-
+            # Retrieve documents with fallback strategy
+            retrieved_docs = self._retrieve_with_fallback(retriever, query, rewritten, log_placeholder)
+            
             if debug_mode:
                 st.info(f"📊 Retrieved {len(retrieved_docs)} chunks")
 
-            # 6. Build final context
+            # Phase 5: 🆕 NEW: Enhanced context assembly (Phase 3 feature)
             st.session_state.thinking_logs.append("🏗️ Building enhanced context window...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Building enhanced context window...")
 
             try:
+                # Try Phase 3 enhanced context building
                 enhanced_context = self.context_builder.build_enhanced_context(
-                    query=query,
-                    retrieved_docs=retrieved_docs,
-                    intent=intent,
-                    query_hints=query_hints
+                    retrieved_docs, query, intent
                 )
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced context built: {len(enhanced_context)} characters")
+                
+                # Format context for LLM (Phase 3 feature)
+                formatted_context = self.context_builder.format_context_for_llm(enhanced_context)
+                
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 enhanced context built: {len(formatted_context)} characters")
+                
+                # Create enhanced prompt with Phase 3 context
+                enhanced_query = self._create_enhanced_query_v2(
+                    query, rewritten, intent, impact_context, formatted_context
+                )
+                
             except Exception as e:
-                st.error(f"❌ Context building failed: {e}")
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Context building failed: {e}")
-                enhanced_context = ""
+                # Fallback to original context building
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 context building failed, using fallback: {e}")
+                
+                # Use original context building approach
+                query_hints = self.query_intent_classifier.get_query_context_hints(intent, query)
+                enhanced_query = self._create_enhanced_query(
+                    query, rewritten, intent, impact_context, ""
+                )
 
-        # 7. Generate prompt and invoke LLM
-        st.session_state.thinking_logs.append("🤖 Generating answer with enhanced context...")
-        update_logs(log_placeholder)
-        log_to_sublog(self.project_dir, "chat_handler.log", "Generating answer with enhanced context...")
+            # Phase 6: Generate answer
+            st.session_state.thinking_logs.append("🤖 Generating answer with enhanced context...")
+            update_logs(log_placeholder)
+            log_to_sublog(self.project_dir, "chat_handler.log", "Generating answer with enhanced context...")
 
-        try:
-            # Create enhanced query with context
-            enhanced_query = self._create_enhanced_query(
-                original_query=query,
-                rewritten_query=rewritten,
-                intent=intent,
-                impact_context=impact_context,
-                enhanced_context=enhanced_context
-            )
-            
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced query created: {len(enhanced_query)} characters")
-            
             # Invoke QA chain
             result = qa_chain.invoke({"query": enhanced_query})
             answer = result.get("result", "Sorry, I couldn't generate an answer.")
-            source_documents = result.get("source_documents", [])
-            
+            source_documents = result.get("source_documents", retrieved_docs)
+
             log_to_sublog(self.project_dir, "chat_handler.log", f"Answer generated: {len(answer)} characters")
             log_to_sublog(self.project_dir, "chat_handler.log", f"Source documents: {len(source_documents)} documents")
-            
-            # Rerank documents by intent if we have source documents
+
+            # Phase 7: Rerank documents by intent
             if source_documents:
                 reranked_docs = self._rerank_docs_by_intent(source_documents, query, intent)
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
             else:
                 reranked_docs = []
                 log_to_sublog(self.project_dir, "chat_handler.log", "No source documents to rerank")
-            
+
             st.session_state.thinking_logs.append("✅ Answer generated successfully!")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Query processing completed successfully")
-            
+
             # Create metadata for UI display
             metadata = {
                 "intent": intent,
                 "confidence": confidence,
                 "rewritten_query": rewritten,
-                "enhanced_query": enhanced_query[:200] + "..." if len(enhanced_query) > 200 else enhanced_query
+                "enhanced_query": enhanced_query[:200] + "..." if len(enhanced_query) > 200 else enhanced_query,
+                "phase_3_enabled": True
             }
-            
+
             return answer, reranked_docs, impact_files, metadata
-            
+
         except Exception as e:
-            st.error(f"❌ Error generating answer: {e}")
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Error generating answer: {e}")
+            st.error(f"❌ Error processing query: {e}")
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Error processing query: {e}")
             return f"Sorry, I encountered an error while processing your query: {e}", [], [], {}
 
-    # ------------------ Helper Methods ------------------
+    def _retrieve_with_fallback(self, retriever, query, rewritten, log_placeholder):
+        """Retrieve documents with multiple fallback strategies."""
+        try:
+            # Try with rewritten query first
+            retrieved_docs = retriever.invoke(rewritten)
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with rewritten query")
+            
+            # If no results, try with original query as fallback
+            if not retrieved_docs:
+                st.session_state.thinking_logs.append("⚠️ No results with rewritten query, trying original...")
+                update_logs(log_placeholder)
+                retrieved_docs = retriever.invoke(query)
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with original query")
+            
+            # If still no results, try with key terms
+            if not retrieved_docs:
+                st.session_state.thinking_logs.append("⚠️ No results, trying with key terms...")
+                update_logs(log_placeholder)
+                key_terms = self._extract_key_terms(query)
+                if key_terms:
+                    key_query = " ".join(key_terms)
+                    retrieved_docs = retriever.invoke(key_query)
+                    log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with key terms: {key_terms}")
+            
+            return retrieved_docs
+            
+        except Exception as e:
+            st.error(f"❌ Retrieval failed: {e}")
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieval failed: {e}")
+            return []
 
+    def _create_enhanced_query_v2(self, original_query, rewritten_query, intent, impact_context, phase3_context):
+        """🆕 NEW: Create enhanced query with Phase 3 context."""
+        if phase3_context:
+            return f"""Based on this comprehensive multi-layered context analysis:
+
+{phase3_context}
+
+Original Query: {original_query}
+Intent: {intent}
+
+Provide a detailed, accurate answer that:
+1. Uses information from multiple context layers
+2. Explains relationships and dependencies  
+3. Provides concrete examples from the codebase
+4. Addresses the specific intent of the query
+
+Answer:"""
+        else:
+            # Fallback to original method
+            return self._create_enhanced_query(original_query, rewritten_query, intent, impact_context, "")
+
+    # 🔧 PRESERVE: Keep all existing helper methods unchanged
+    
     def _rerank_docs_by_intent(self, source_documents, query, intent):
         """Rerank and return actual Document objects (not file name strings)."""
         def score(doc):
@@ -201,13 +234,13 @@ class ChatHandler:
             content = doc.page_content.lower()
             meta = doc.metadata
             score = 0
-
+            
             for token in query.lower().split():
                 if token in content:
                     score += 1
                 if token in source:
                     score += 0.5
-
+            
             if intent == "overview":
                 if any(pf in source for pf in self.project_config.get_priority_files()):
                     score += 5
@@ -221,9 +254,9 @@ class ChatHandler:
                 if meta.get("chunk_hierarchy") == "function":
                     score += 4
                 score += meta.get("complexity_score", 0) * 0.3
-
+            
             return score
-
+        
         sorted_docs = sorted(source_documents, key=score, reverse=True)
         return sorted_docs[:5]
 
@@ -233,27 +266,29 @@ class ChatHandler:
             st.session_state.thinking_logs.append("✏️ Rewriting query based on intent...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "rewriting_queries.log",
-                f"\nOriginal: {query}\nIntent: {intent}"
-            )
+                         f"\nOriginal: {query}\nIntent: {intent}")
+
             rewritten = self.rewrite_chain.invoke({
                 "original": query,
                 "project_type": self.project_config.project_type,
                 "intent": intent
             }).content.strip()
+
             log_to_sublog(self.project_dir, "rewriting_queries.log",
-                f"Rewritten: {rewritten}\n"
-            )
-            if debug_mode: st.info(f"🔄 Rewritten query: {rewritten}")
+                         f"Rewritten: {rewritten}\n")
+
+            if debug_mode: 
+                st.info(f"🔄 Rewritten query: {rewritten}")
             st.session_state.thinking_logs.append(f"✅ Query rewritten")
             update_logs(log_placeholder)
             return rewritten
+
         except Exception as e:
             if debug_mode:
                 st.warning(f"Query rewriting failed: {e}")
             st.session_state.thinking_logs.append("⚠️ Query rewriting failed, using original")
             log_to_sublog(self.project_dir, "rewriting_queries.log",
-                f"Rewriting failed for: {query} (intent={intent}). Error: {e}\n"
-            )
+                         f"Rewriting failed for: {query} (intent={intent}). Error: {e}\n")
             update_logs(log_placeholder)
             return query
 
@@ -285,12 +320,12 @@ class ChatHandler:
     def _extract_key_terms(self, query):
         """Extract key terms from a query using a simple tokenizer."""
         tokens = re.findall(r'\b\w+\b', query.lower())
-        return [t for t in tokens if len(t) > 3 and not t.isdigit()] # Filter out short words and numbers
+        return [t for t in tokens if len(t) > 3 and not t.isdigit()]
 
     def _create_enhanced_query(self, original_query, rewritten_query, intent, impact_context, enhanced_context):
-        # Create a more focused query that doesn't overwhelm the LLM
+        """Original enhanced query creation method."""
+        # Keep the original logic from old_chat_handler.py
         if enhanced_context:
-            # Use the enhanced context but keep the query focused
             if intent == "overview":
                 return f"""Based on this comprehensive codebase context:
 
@@ -315,7 +350,6 @@ Answer this question: {rewritten_query}
 
 Provide a clear, specific answer based on the code context. Use concrete details from the code to support your response."""
         else:
-            # Fallback to the rewritten query if no enhanced context
             return rewritten_query
 
     def _is_impact_question(self, query):
@@ -324,14 +358,3 @@ Provide a clear, specific answer based on the code context. Use concrete details
             "remove", "delete", "consequences", "dependencies"
         ]
         return any(k in query.lower() for k in impact_keywords)
-
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - Redundant or in-place reranking and print/debug log statements – now strictly logger.py-based, tracked by clear file/sublog.
-# - Old _rerank_sources_by_intent and non-metadata-based filtering – replaced by anchor-based filtering/scoring, hierarchy-aware where available.
-# ADDED
-# - _rerank_docs_by_intent: Enhanced reranking with intent-aware scoring and semantic anchor boosting.
-# - _rewrite_query_with_intent: Added log_placeholder parameter for real-time logging and better error handling.
-# - _analyze_impact_with_intent: Added log_placeholder parameter and enhanced logging for impact analysis.
-# - Enhanced logging throughout with logger.py utilities for all structured logging and diagnostics.
-# - Better error handling with graceful fallbacks and comprehensive logging.
