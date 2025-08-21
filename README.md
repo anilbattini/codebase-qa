@@ -225,6 +225,31 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Uses Chroma for vector storage.
 - Comprehensive testing and debugging tools included.
 
+## Backlog
+
+- Add additional model provider, Huggingface embedding and llm model support along side ollama.
+- Create organic building of confidence score.
+- Sidebar configurations to choose the model provider with model types
+- Fix rebuild db or force rebuild logic. Currently, db corruption error occurs if we forcestop app and rebuild.
+- Add multi module support including create cross reference graphs on modules level (Adv).
+- Add feature to dynamically pull down the git commit details and history of code to answer questions on it (Adv).
+- Add Role based logic retrieval and rewriting the queries (Adv)
+- Show alternate optional answers along with highly ranked answer (Adv)
+- Include PDFs and WebUrls support to go though and answer questions.
+- Add session memory to add followup questions feature.(Adv)
+
+## Feedback items to be added
+- Adding stream feature, so that user can see the response as it is generated.
+- Add support to retreive the data based on country. So, save data tagging with country info.
+- 
+
+## WIP Backlog notes
+
+- both huggingface and ollama provider support is added. Ollama is covered end to end. 
+- As of huggingface is good with building RAG, but retrieval is not working with Huggingface LLM.
+- Thinking of not pursuing this problem, since we are going to use spirare instead of local LLM.
+- As of now, focusing on building custom endpoint support in the tool with openai api structure.
+
 ---
 
 > _Note: The system includes comprehensive testing and debugging tools. For detailed testing instructions, see the debug_tools documentation._
