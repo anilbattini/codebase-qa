@@ -11,6 +11,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
 from chunker_factory import get_chunker, summarize_chunk
+from context_builder import ContextBuilder
 from git_hash_tracker import FileHashTracker
 from config import ProjectConfig
 from model_config import model_config
@@ -288,9 +289,6 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
         update_logs(log_placeholder)
         log_to_sublog(project_dir, "rag_manager.log", "Updated file tracking information")
         
-
-    # Add this section after hierarchical indexer (around line 360):
-    # Build cross-references for Level 2-4 capabilities
     if documents:
         st.session_state.thinking_logs.append("🔗 Building cross-reference maps...")
         update_logs(log_placeholder)
@@ -317,6 +315,33 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
             logger.warning(f"Cross-reference building failed: {e}")
             log_to_sublog(project_dir, "rag_manager.log", f"Warning: Cross-reference building failed: {e}")
             # Continue without cross-references - don't break the build
+            
+        # Build enhanced context data
+        if documents:
+            st.session_state.thinking_logs.append("🧠 Preparing enhanced context assembly...")
+            update_logs(log_placeholder)
+            logger.info("Initializing enhanced context assembly")
+            log_to_sublog(project_dir, "rag_manager.log", "Preparing enhanced context assembly...")
+            
+            try:
+                context_builder = ContextBuilder(project_config, project_dir)
+                context_loaded = context_builder.load_context_data()
+                
+                if context_loaded:
+                    st.session_state.thinking_logs.append("✅ Enhanced context assembly ready!")
+                    update_logs(log_placeholder)
+                    log_to_sublog(project_dir, "rag_manager.log", "Enhanced context assembly initialized successfully")
+                else:
+                    st.session_state.thinking_logs.append("⚠️ Enhanced context assembly initialization failed")
+                    log_to_sublog(project_dir, "rag_manager.log", "Enhanced context assembly initialization failed")
+                    
+            except Exception as e:
+                st.session_state.thinking_logs.append(f"⚠️ Warning: Enhanced context assembly failed: {e}")
+                update_logs(log_placeholder)
+                logger.warning(f"Enhanced context assembly failed: {e}")
+                log_to_sublog(project_dir, "rag_manager.log", f"Warning: Enhanced context assembly failed: {e}")
+                # Continue without enhanced context - don't break the build
+
 
 
     # Build relationships and hierarchy
