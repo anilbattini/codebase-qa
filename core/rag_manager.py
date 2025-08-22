@@ -8,6 +8,8 @@ from model_config import model_config
 from logger import log_highlight, log_to_sublog
 from build_rag import build_rag
 from chat_handler import ChatHandler
+from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
 
 class RagManager:
     """
@@ -29,13 +31,64 @@ class RagManager:
         st.session_state.setdefault("chat_history", [])
     
     def setup_llm(self, ollama_model=None, ollama_endpoint=None):
-        """Setup the language model."""
-        if ollama_model is None:
-            ollama_model = model_config.get_ollama_model()
-        if ollama_endpoint is None:
-            ollama_endpoint = model_config.get_ollama_endpoint()
-        self.llm = ChatOllama(model=ollama_model, base_url=ollama_endpoint)
-        return self.llm
+        """Setup the language model based on provider configuration."""
+        from langchain_ollama import ChatOllama
+        
+        # Get active provider configuration
+        try:
+            llm_config = model_config.get_active_llm_config()
+            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
+                        "rag_manager.log", 
+                        f"Setting up LLM with provider: {llm_config['provider']}")
+            
+            if llm_config['provider'] == 'ollama':
+                # Use provided parameters or fall back to config
+                model = ollama_model or llm_config['model']
+                endpoint = ollama_endpoint or llm_config['endpoint']
+                self.llm = ChatOllama(model=model, base_url=endpoint)
+                log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
+                            "rag_manager.log", 
+                            f"Ollama LLM setup: {model} at {endpoint}")
+                
+            elif llm_config['provider'] == 'cloud':
+                # Import CloudOpenAI/ChatOpenAI
+                try:
+                    from langchain_openai import ChatOpenAI
+                    
+                    # Verify API key
+                    if not llm_config['api_key']:
+                        raise ValueError("CLOUD_API_KEY environment variable not set")
+                    
+                    if not llm_config['endpoint']:
+                        raise ValueError("Cloud endpoint not configured")
+                    
+                    self.llm = ChatOpenAI(
+                        model=llm_config['model'],
+                        api_key=llm_config['api_key'],
+                        base_url=llm_config['endpoint']
+                    )
+                    log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
+                                "rag_manager.log", 
+                                f"Cloud LLM setup: {llm_config['model']} at {llm_config['endpoint']}")
+                                
+                except ImportError:
+                    raise ImportError("langchain_openai package required for cloud provider. Install with: pip install langchain-openai")
+            
+            return self.llm
+        
+        except ValueError as e:
+            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
+                        "rag_manager.log", 
+                        f"LLM setup failed: {e}")
+            # Fall back to Ollama with provided parameters
+            model = ollama_model or model_config.get_ollama_model()
+            endpoint = ollama_endpoint or model_config.get_ollama_endpoint()
+            self.llm = ChatOllama(model=model, base_url=endpoint)
+            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
+                        "rag_manager.log", 
+                        f"Fallback to Ollama: {model} at {endpoint}")
+            return self.llm
+
     
     def cleanup_existing_files(self, project_dir, project_type):
         """Delete all existing generated files for a complete rebuild."""
@@ -202,8 +255,7 @@ class RagManager:
         log_highlight("RagManager.load_existing_rag_index")
         
         try:
-            from langchain_community.vectorstores import Chroma
-            from langchain_ollama import OllamaEmbeddings
+            
             
             # Get project configuration
             project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
