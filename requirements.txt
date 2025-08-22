@@ -7,3 +7,4 @@ numpy
 pathspec
 streamlit
 torch
+python-dotenv

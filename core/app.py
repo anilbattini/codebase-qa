@@ -8,8 +8,13 @@ from chat_handler import ChatHandler
 from logger import setup_global_logger, log_highlight
 from config import ProjectConfig
 from process_manager import ProcessManager
+from dotenv import load_dotenv
+
+
+
 
 # 1. Initial Setup
+load_dotenv()
 st.set_page_config(page_title="Codebase-QA", layout="wide")
 
 # Initialize logger with proper path resolution
