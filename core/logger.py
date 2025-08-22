@@ -114,7 +114,7 @@ def log_highlight(msg, logger=None):
     if logger:
         logger.info(highlight_msg)
     else:
-        print(highlight_msg)
+        log_to_sublog(None, "highlight.log", msg)
 
 # --------------- CODE CHANGE SUMMARY ---------------
 # ADDED

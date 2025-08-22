@@ -609,7 +609,7 @@ def get_impact(file_name: str, project_dir: str = None) -> List[str]:
                     todo.add(dependant)
         return list(impacted)
     except Exception as e:
-        print(f"Error in impact analysis: {e}")
+        log_highlight(f"Error in impact analysis: {e}")
         return []
 
 # --------------- CODE CHANGE SUMMARY ---------------
