@@ -1,174 +1,418 @@
-# FUNCTIONAL FLOW DIAGRAM
+```markdown
+# FUNCTIONAL_FLOW DIAGRAM
+
+---
 
 ## 🟦 RAG Index Build & Ready Flow
 
-Sidebar: user selects project directory, project type, model, and endpoint       
+**Provider Selection & Configuration (NEW SECTION):**  
+User opens application and configures provider settings  
+↓  
+[UIComponents.render_sidebar_config – Provider Selection, Line no: 72, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L72)  
+	└─ **NEW**: Renders provider selection: "Choose Provider...", "Ollama (Local)", "Cloud (OpenAI Compatible)"  
+	└─ **NEW**: For Ollama: Shows model and endpoint configuration inputs  
+	└─ **NEW**: For Cloud: Shows endpoint selection (Environment/Custom) and API key validation  
+	└─ **NEW**: Validates provider settings and shows connection status  
+	└─ **NEW**: Displays embedding model configuration (always local Ollama for embeddings)  
+↓  
+[ModelConfig.set_provider, Line no: 214, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L214)  
+	└─ **NEW**: Sets active provider (ollama or cloud) in centralized configuration  
+	└─ **NEW**: Validates provider choice and updates all related settings  
+↓  
+[ModelConfig.get_llm, Line no: 70, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L70)  
+	└─ **NEW**: Factory method returns appropriate LLM instance (ChatOllama or ChatOpenAI)  
+	└─ **NEW**: Handles provider-specific parameter mapping and configuration  
+	└─ **NEW**: Includes fallback logic and error handling for provider switching  
+	└─ **NEW**: Ensures consistent parameter handling across different providers  
+
+---
+
+**Project Configuration:**  
+Sidebar: user selects project directory, project type, model, and endpoint  
 ↓  
 [UIComponents.render_sidebar_config, Line no: 19, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L19)  
-  └─ Renders sidebar inputs for project directory, project type, Ollama model and endpoint.  
-  └─ Handles user changes, validations, and warnings about existing data.  
+	└─ Renders sidebar inputs for project directory, project type, provider configuration  
+	└─ Handles user changes, validations, and warnings about existing data  
+	└─ **NEW**: Includes provider selection and configuration validation  
+	└─ **NEW**: Shows "Disable RAG (query LLM directly)" toggle for LLM-only mode  
 ↓  
-[RagManager.initialize_session_state, Line no: 14, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L14)  
-  └─ Initializes critical Streamlit session state keys like retriever and QA chain for stable app state.  
-  └─ Ensures consistent session during build or load operations.  
+[RagManager.initialize_session_state, Line no: 23, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L23)  
+	└─ Initializes critical Streamlit session state keys like retriever and QA chain for stable app state  
+	└─ Ensures consistent session during build or load operations  
+	└─ **NEW**: Initializes provider-specific session state variables  
 ↓  
-[ProjectConfig.__init__, Line no: 112, core/config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/config.py#L112)  
-  └─ Detects or applies project type (auto/manual).  
-  └─ Loads language specific file extensions, chunking rules, ignore patterns, and project indicators.  
+[ProjectConfig.__init__, Line no: 262, core/config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/config.py#L262)  
+	└─ Detects or applies project type (auto/manual detection)  
+	└─ Loads language specific file extensions, chunking rules, ignore patterns, and project indicators  
+	└─ **NEW**: Supports project type-specific database directories (codebase-qa_<project_type>/)  
+	└─ **NEW**: Handles project type switching with database backup and restore  
 ↓  
-[RagManager.should_rebuild_index, Line no: 123, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L123)  
-  └─ **NEW**: Returns detailed rebuild information: {"rebuild": bool, "reason": str, "files": list}  
-  └─ Checks presence of vector DB SQLite file, git/hash tracking files.  
-  └─ **ENHANCED**: Detects if source files have changed via Git commit differences or working directory changes.  
-  └─ **NEW**: Distinguishes between incremental rebuild (changed files) and full rebuild (no DB, no tracking).  
+[RagManager.should_rebuild_index, Line no: 174, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L174)  
+	└─ **NEW**: Returns detailed rebuild information: {"rebuild": bool, "reason": str, "files": list}  
+	└─ Checks presence of vector DB SQLite file, git/hash tracking files  
+	└─ **ENHANCED**: Detects if source files have changed via Git commit differences or working directory changes  
+	└─ **NEW**: Distinguishes between incremental rebuild (changed files) and full rebuild (no DB, no tracking)  
 
-**REBUILD DECISION LOGIC:**
-- **No Database**: `{"rebuild": True, "reason": "no_database", "files": None}` → Full rebuild
+---
+
+**REBUILD DECISION LOGIC:**  
+- **No Database**: `{"rebuild": True, "reason": "no_database", "files": None}` → Full rebuild  
 - **No Tracking**: `{"rebuild": True, "reason": "no_tracking", "files": None}` → Full rebuild  
-- **Files Changed**: `{"rebuild": True, "reason": "files_changed", "files": [file_list]}` → Incremental rebuild
-- **No Changes**: `{"rebuild": False, "reason": "no_changes", "files": []}` → Load existing
+- **Files Changed**: `{"rebuild": True, "reason": "files_changed", "files": [file_list]}` → Incremental rebuild  
+- **No Changes**: `{"rebuild": False, "reason": "no_changes", "files": []}` → Load existing  
 
-**FORCE REBUILD HANDLING:**
+---
+
+**PROCESS MANAGEMENT & UI PROTECTION (NEW SECTION):**  
+If rebuild is required, protect the build process from UI interference  
+↓  
+[ProcessManager.start_rag_build, Line no: 18, core/process_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/process_manager.py#L18)  
+	└─ **NEW**: Marks RAG building as started with timestamp for timeout detection  
+	└─ **NEW**: Sets building flag in session state to prevent concurrent operations  
+	└─ **NEW**: Disables UI elements that could interfere with build process  
+	└─ **NEW**: Provides build timeout detection (10 minutes) and recovery mechanisms  
+↓  
+[ProcessManager.disable_ui_during_build, Line no: 70, core/process_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/process_manager.py#L70)  
+	└─ **NEW**: Returns safe UI state during build to prevent user interference  
+	└─ **NEW**: Blocks force rebuild, debug mode, and project type changes during build  
+	└─ **NEW**: Shows build status with progress and timeout warnings  
+
+---
+
+**FORCE REBUILD HANDLING:**  
 If user requests force rebuild (via "🔄 Force Rebuild" button)  
 ↓  
 [App.py force rebuild logic, Line no: 54, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L54)  
-  └─ **NEW**: Clears existing data and performs complete rebuild regardless of file changes.  
-  └─ **NEW**: Shows user confirmation: "🔄 Force Rebuild: User requested complete rebuild. Cleaning existing data..."  
+	└─ **NEW**: Clears existing data and performs complete rebuild regardless of file changes  
+	└─ **NEW**: Shows user confirmation: "🔄 Force Rebuild: User requested complete rebuild. Cleaning existing data..."  
+	└─ **NEW**: Uses ProcessManager to protect the force rebuild process  
 
-**INCREMENTAL REBUILD (Changed Files Detected):**
-↓  
-[RagManager.build_rag_index with incremental=True, Line no: 162, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L162)  
-  └─ **NEW**: Calls build_rag with incremental=True and files_to_process parameter.  
-  └─ **NEW**: Shows progress: "🔄 Incremental Build: Processing X changed files..."  
-  └─ **NEW**: Preserves existing database and only processes changed files.  
+---
 
-**FULL REBUILD (No DB, No Tracking, or Force Rebuild):**
+**INCREMENTAL REBUILD (Changed Files Detected):**  
 ↓  
-[RagManager.cleanup_existing_files, Line no: 41, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L41)  
-  └─ Deletes existing vector DB directories and clears session state to ensure clean rebuild.  
-  └─ Handles retry logic to overcome file locks during cleanup.  
-↓  
-[RagManager.build_rag_index with incremental=False, Line no: 162, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L162)  
-  └─ **NEW**: Calls build_rag with incremental=False for full rebuild.  
-  └─ **NEW**: Shows progress: "🔄 Full Build: Rebuilding entire RAG index..."  
+[RagManager.build_rag_index with incremental=True, Line no: 206, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L206)  
+	└─ **NEW**: Calls build_rag with incremental=True and files_to_process parameter  
+	└─ **NEW**: Shows progress: "🔄 Incremental Build: Processing X changed files..."  
+	└─ **NEW**: Preserves existing database and only processes changed files  
 
-**BUILD PROCESS (build_rag function):**
+---
+
+**FULL REBUILD (No DB, No Tracking, or Force Rebuild):**  
 ↓  
-[build_rag, Line no: 62, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L62)  
-  └─ **NEW**: Supports incremental=True/False and files_to_process parameters.  
-  └─ **NEW**: For incremental builds: preserves existing database, processes only changed files.  
-  └─ **NEW**: For full builds: cleans database directory, processes all files.  
-  └─ **ENHANCED**: Shows build mode: "🔄 Incremental build mode - processing only changed files" or "Full build mode".  
-  └─ Reads files, applies chunking per language, extracts semantic metadata.  
-  └─ Creates output folders and handles incremental file processing via git/hash tracking.  
-  └─ Initializes embedding model and verifies Ollama endpoint responsiveness.  
-  └─ Processes each source file: chunks files, extracts metadata, deduplicates using chunk fingerprints.  
-  └─ Builds code relationships and hierarchical index files.  
-  └─ Sanitizes chunks and sends batches for embedding via Ollama API.  
-  └─ **ENHANCED**: Persists embeddings in Chroma vector database with incremental update support.  
-  └─ Updates file tracking and logs detailed stats on the process.  
+[RagManager.cleanup_existing_files, Line no: 91, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L91)  
+	└─ Deletes existing vector DB directories and clears session state to ensure clean rebuild  
+	└─ Handles retry logic with timeout to overcome file locks during cleanup  
+	└─ **NEW**: Includes Chroma connection cleanup to prevent database locking issues  
 ↓  
-[ProjectConfig.create_directories, Line no: 181, core/config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/config.py#L181)  
-  └─ Ensures all database and logs directories exist for current project type.  
+[RagManager.build_rag_index with incremental=False, Line no: 206, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L206)  
+	└─ **NEW**: Calls build_rag with incremental=False for full rebuild  
+	└─ **NEW**: Shows progress: "🔄 Full Build: Rebuilding entire RAG index..."  
+
+---
+
+**BUILD PROCESS (build_rag function):**  
 ↓  
-[FileHashTracker.get_changed_files, core/git_hash_tracker.py](https://github.com/anilbattini/codebase-qa/blob/main/core/git_hash_tracker.py)  
-  └─ **ENHANCED**: Now properly detects Git commit differences using `git diff --name-only {last_commit}..{current_commit}`.  
-  └─ **NEW**: Combines commit differences + working directory changes for comprehensive change detection.  
-  └─ **NEW**: Provides detailed logging: "Git commit diff detected X changed files between {last_commit} and {current_commit}".  
-  └─ **NEW**: Falls back to content-hash tracking if Git tracking fails.  
+[build_rag, Line no: 64, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L64)  
+	└─ **NEW**: Supports incremental=True/False and files_to_process parameters  
+		└─ **NEW**: For incremental builds: preserves existing database, processes only changed files  
+		└─ **NEW**: For full builds: cleans database directory, processes all files  
+	└─ **ENHANCED**: Shows build mode: "🔄 Incremental build mode - processing only changed files" or "Full build mode"  
+	└─ Reads files, applies chunking per language, extracts semantic metadata  
+	└─ Creates output folders and handles incremental file processing via git/hash tracking  
+	└─ **NEW**: Uses ModelConfig.get_embedding_model() for consistent embedding model selection  
+	└─ Initializes embedding model and verifies Ollama endpoint responsiveness  
+	└─ Processes each source file: chunks files, extracts metadata, deduplicates using chunk fingerprints  
+	└─ **NEW**: Builds cross-references for enhanced context capabilities  
+	└─ Builds code relationships and hierarchical index files  
+	└─ Sanitizes chunks and sends batches for embedding via Ollama API  
+	└─ **ENHANCED**: Persists embeddings in Chroma vector database with incremental update support  
+	└─ Updates file tracking and logs detailed stats on the process  
 ↓  
-[ModelConfig.get_embedding_model, Line no: 63, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L63)  
-  └─ Retrieves the embedding model name to ensure consistency in embedding dimensions.  
+[ProjectConfig.create_directories, Line no: 342, core/config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/config.py#L342)  
+	└─ Ensures all database and logs directories exist for current project type  
+	└─ **NEW**: Creates project-type-specific directories (codebase-qa_<project_type>/)  
 ↓  
-[ModelConfig.get_ollama_endpoint, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py)  
-  └─ Retrieves the Ollama server endpoint URL used for embedding and LLM calls.  
+[FileHashTracker.get_changed_files, Line no: 22, core/git_hash_tracker.py](https://github.com/anilbattini/codebase-qa/blob/main/core/git_hash_tracker.py#L22)  
+	└─ **ENHANCED**: Now properly detects Git commit differences using `git diff --name-only {last_commit}..{current_commit}`  
+	└─ **NEW**: Combines commit differences + working directory changes for comprehensive change detection  
+	└─ **NEW**: Provides detailed logging: "Git commit diff detected X changed files between {last_commit} and {current_commit}"  
+	└─ **NEW**: Falls back to content-hash tracking if Git tracking fails  
+	└─ **NEW**: Handles gitignore patterns and hierarchical ignore rules  
+
+---
+
+**Cross-Reference Building (NEW STEP):**  
 ↓  
-[chunker_factory.get_chunker, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py)  
-  └─ Selects language-specific chunking strategy function per file extension.  
+[CrossReferenceBuilder.build_cross_references, Line no: 54, core/cross_reference_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/cross_reference_builder.py#L54)  
+	└─ **NEW**: Extracts symbol definitions from method signatures and metadata  
+	└─ **NEW**: Builds comprehensive usage maps and call relationships  
+	└─ **NEW**: Builds inheritance and interface implementation relationships  
+	└─ **NEW**: Detects design pattern instances (Factory, Singleton, Observer, Strategy, etc.)  
+	└─ **NEW**: Generates statistics about cross-references and code complexity  
 ↓  
-[chunker_factory.chunker, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py)  
-  └─ Executes semantic chunking, splitting code into meaningful segments for embedding.  
+[CrossReferenceBuilder.save_cross_references, Line no: 382, core/cross_reference_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/cross_reference_builder.py#L382)  
+	└─ **NEW**: Saves cross-reference data to structured files:  
+		└─ cross_references.json (main cross-reference data)  
+		└─ call_graph_index.json (function call relationships)  
+		└─ inheritance_index.json (class hierarchy mappings)  
+		└─ symbol_usage_index.json (symbol usage patterns)  
+	└─ **NEW**: Creates quick-lookup files for common queries  
+
+---
+
+**Enhanced Context Building (Phase 3 - NEW STEP):**  
 ↓  
-[MetadataExtractor.create_enhanced_metadata, core/metadata_extractor.py](https://github.com/anilbattini/codebase-qa/blob/main/core/metadata_extractor.py)  
-  └─ Extracts detailed chunk meta class names, function names, dependencies, semantic anchors.  
+[ContextBuilder.load_context_data, Line no: 34, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L34)  
+	└─ **NEW**: Loads cross-reference and hierarchical data for context assembly  
+	└─ **NEW**: Initializes multi-strategy context building capabilities  
+	└─ **NEW**: Prepares enhanced context layers for query processing  
 ↓  
-[chunk_fingerprint, Line no: 13, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L13)  
-  └─ Generates SHA-256 hash fingerprints for each chunk to eliminate duplicate embeddings.  
+[ModelConfig.get_embedding_model, Line no: 186, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L186)  
+	└─ Retrieves the embedding model name to ensure consistency in embedding dimensions  
+	└─ **NEW**: Centralized embedding model configuration prevents dimension mismatches  
 ↓  
-[chunker_factory.summarize_chunk, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py)  
-  └─ Creates concise summary keywords from chunks for retrieval relevance boosts.  
+[ModelConfig.get_ollama_endpoint, Line no: 202, core/model_config.py](https://github.com/anilbattini/codebase-qa/blob/main/core/model_config.py#L202)  
+	└─ Retrieves the Ollama server endpoint URL used for embedding and LLM calls  
+	└─ **NEW**: Supports both local Ollama and cloud provider endpoints  
 ↓  
-[build_code_relationship_map, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py)  
-  └─ Constructs mappings of code dependencies to understand file impact and relationships.  
+[chunker_factory.get_chunker, Line no: 164, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py#L164)  
+	└─ Selects language-specific chunking strategy function per file extension  
+	└─ **NEW**: Enhanced semantic chunking with context hierarchy and improved overlap  
 ↓  
-[HierarchicalIndexer.create_hierarchical_index, core/hierarchical_indexer.py](https://github.com/anilbattini/codebase-qa/blob/main/core/hierarchical_indexer.py)  
-  └─ Builds layered hierarchical indexes grouping chunks by modules, files, classes.  
+[SemanticChunker.create_semantic_chunker, Line no: 16, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py#L16)  
+	└─ Executes semantic chunking, splitting code into meaningful segments for embedding  
+	└─ **NEW**: Config-driven, semantic-aware chunking with context hierarchy  
+	└─ **NEW**: Calculates semantic richness scores and detects chunk types  
+↓  
+[MetadataExtractor.create_enhanced_metadata, Line no: 21, core/metadata_extractor.py](https://github.com/anilbattini/codebase-qa/blob/main/core/metadata_extractor.py#L21)  
+	└─ Extracts detailed chunk meta class names, function names, dependencies, semantic anchors  
+	└─ **NEW**: Enhanced method signature extraction for multiple languages  
+	└─ **NEW**: Design pattern detection and error handling pattern extraction  
+	└─ **NEW**: API usage pattern extraction for external service detection  
+↓  
+[chunk_fingerprint, Line no: 24, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L24)  
+	└─ Generates SHA-256 hash fingerprints for each chunk to eliminate duplicate embeddings  
+↓  
+[chunker_factory.summarize_chunk, Line no: 176, core/chunker_factory.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chunker_factory.py#L176)  
+	└─ Creates concise summary keywords from chunks for retrieval relevance boosts  
+↓  
+[build_code_relationship_map, Line no: 52, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L52)  
+	└─ Constructs mappings of code dependencies to understand file impact and relationships  
+	└─ **NEW**: Uses normalized paths for cross-platform compatibility  
+↓  
+[HierarchicalIndexer.create_hierarchical_index, Line no: 21, core/hierarchical_indexer.py](https://github.com/anilbattini/codebase-qa/blob/main/core/hierarchical_indexer.py#L21)  
+	└─ Builds layered hierarchical indexes grouping chunks by modules, files, classes  
+	└─ **NEW**: Multi-level indices for component, file, business logic, UI flow, and API levels  
+	└─ **NEW**: Surfaces missing anchors/attributes for RAG pipeline health monitoring  
 ↓  
 (Sanitize chunks for embedding ingestion)  
-  └─ Cleans chunk contents and metadata ensuring compatibility with vector storage.  
+	└─ Cleans chunk contents and metadata ensuring compatibility with vector storage  
+	└─ **NEW**: Enhanced sanitization handles complex metadata structures  
 ↓  
 (Embed chunks in batches with OllamaEmbeddings via Ollama API)  
-  └─ Sends semantic chunks in batches to generate embeddings with consistent vector dimensions.  
+	└─ Sends semantic chunks in batches to generate embeddings with consistent vector dimensions  
+	└─ **NEW**: Batch processing with progress tracking and timeout protection  
+	└─ **NEW**: Retry logic for embedding computation failures  
 ↓  
 (Store embedded vectors and metadata in persistent Chroma vector database)  
-  └─ **ENHANCED**: For incremental builds: updates existing database with new documents.  
-  └─ **ENHANCED**: For full builds: creates new database from scratch.  
-  └─ **NEW**: Handles incremental vs full database creation with proper error handling and fallbacks.  
+	└─ **ENHANCED**: For incremental builds: updates existing database with new documents  
+	└─ **ENHANCED**: For full builds: creates new database from scratch  
+	└─ **NEW**: Handles incremental vs full database creation with proper error handling and fallbacks  
+	└─ **NEW**: Database lock prevention with connection cleanup  
 ↓  
 (Update git or file hash tracking records)  
-  └─ Records processed files for incremental rebuild detection on next run.  
+	└─ Records processed files for incremental rebuild detection on next run  
+	└─ **NEW**: Enhanced tracking with both Git commit and working directory changes  
 ↓  
-[RagManager.build_rag_index, Line no: 162, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L162)  
-  └─ Finalizes by setting retriever and QA chain in session state for query answering.  
+[ProcessManager.finish_rag_build, Line no: 33, core/process_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/process_manager.py#L33)  
+	└─ **NEW**: Marks RAG building as finished and clears build state  
+	└─ **NEW**: Re-enables all UI elements that were disabled during build  
+	└─ **NEW**: Cleans up process resources and logs build completion  
+↓  
+[RagManager.build_rag_index completion, Line no: 206, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L206)  
+	└─ Finalizes by setting retriever and QA chain in session state for query answering  
+	└─ **NEW**: Uses provider-specific LLM configuration for QA chain setup  
 
-**NO REBUILD REQUIRED (No changes detected):**
+---
+
+**NO REBUILD REQUIRED (No changes detected):**  
 ↓  
 [App.py no changes handling, Line no: 89, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L89)  
-  └─ **NEW**: Shows success message: "✅ No file changes detected. RAG index is up to date."  
-  └─ **NEW**: Displays info box: "💡 No new files to process. The RAG index is already up to date with the latest changes."  
-  └─ **NEW**: Provides "🔄 Force Rebuild" button for manual rebuild option.  
-  └─ **NEW**: Similar to project type change logic: asks user permission before major operations.  
+	└─ **NEW**: Shows success message: "✅ No file changes detected. RAG index is up to date."  
+	└─ **NEW**: Displays info box: "💡 No new files to process. The RAG index is already up to date with the latest changes."  
+	└─ **NEW**: Provides "🔄 Force Rebuild" button for manual rebuild option  
+	└─ **NEW**: Similar to project type change logic: asks user permission before major operations  
 ↓  
-[RagManager.load_existing_rag_index, Line no: 194, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L194)  
-  └─ Loads existing embeddings, vector DB, retriever, and QA chain from disk.  
-  └─ Uses same embedding model as in build step to avoid dimension mismatches.  
-  └─ Ensures session state is ready for query processing.  
+[RagManager.load_existing_rag_index, Line no: 251, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L251)  
+	└─ Loads existing embeddings, vector DB, retriever, and QA chain from disk  
+	└─ **CRITICAL FIX**: Uses same embedding model as in build step to avoid dimension mismatches  
+	└─ **NEW**: Embedding model consistency check: `embedding_model = "nomic-embed-text:latest"`  
+	└─ **NEW**: Provider-specific LLM setup with fallback logic  
+	└─ Ensures session state is ready for query processing  
 ↓  
-RAG system is ready for queries with retriever and QA chain available in Streamlit session state.
+RAG system is ready for queries with retriever and QA chain available in Streamlit session state  
 
+---
+
+**Debug Mode Activation (NEW SECTION):**  
+If user wants to access debug tools  
+↓  
+[UIComponents.render_welcome_screen – 5-click debug, Line no: 288, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L288)  
+	└─ **NEW**: Tracks title button clicks (5 clicks to enable debug mode)  
+	└─ **NEW**: Shows debug click counter and enables debug mode after 5 clicks  
+	└─ **NEW**: Displays success message: "🔧 Debug mode enabled! Check the sidebar for debug options."  
+↓  
+[UIComponents.render_debug_section, Line no: 388, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L388)  
+	└─ **NEW**: Renders comprehensive debug tools and inspection section  
+	└─ **NEW**: Creates tabs for Vector DB Inspector, Chunk Analyzer, Retrieval Tester, Build Status, Logs  
+	└─ **NEW**: Integrates with actual core functionality (not mock implementations)  
+
+---
 
 ## 🟩 User Query & Answer Flow
 
-User enters a question in the chat UI input box           
+**Query Input and RAG Mode Check:**  
+User enters a question in the chat UI input box  
 ↓  
-[UIComponents.render_chat_input, Line no: 161, core/ui_components.py](https://github.com/kumarb/codebase-qa/blob/main/core/ui_components.py#L161)  
-  └─ Captures user's natural language question input.  
-  └─ Disables input if RAG system is not fully ready.  
+[UIComponents.render_chat_input, Line no: 347, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L347)  
+	└─ Captures user's natural language question input  
+	└─ Disables input if RAG system is not fully ready  
+	└─ **NEW**: Supports form-based input with proper submission handling  
 ↓  
-[RagManager.is_ready, Line no: 195, core/rag_manager.py](https://github.com/kumarb/codebase-qa/blob/main/core/rag_manager.py#L195)  
-  └─ Checks session state to ensure retriever and QA chain objects are initialized.  
-  └─ Prevents query submission if system isn't ready.  
+[App.py RAG disable check, Line no: 40, core/app.py](https://github.com/anilbattini/codebase-qa/blob/main/core/app.py#L40)  
+	└─ **NEW**: Checks "Disable RAG (query LLM directly)" toggle in sidebar  
+	└─ **NEW**: If RAG disabled: sends query directly to LLM without retrieval  
+	└─ **NEW**: If RAG enabled: proceeds with full RAG pipeline processing  
 ↓  
-[QueryIntentClassifier.classify_intent, Line no: 29, core/query_intent_classifier.py](https://github.com/kumarb/codebase-qa/blob/main/core/query_intent_classifier.py#L29)  
-  └─ Applies pattern-based matching on user query to classify intent (e.g., overview, validation).  
-  └─ Returns intent label and confidence score to inform retrieval strategy.  
+[RagManager.is_ready, Line no: 328, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py#L328)  
+	└─ Checks session state to ensure retriever and QA chain objects are initialized  
+	└─ Prevents query submission if system isn't ready  
+	└─ **NEW**: Validates both retriever and provider-specific QA chain readiness  
+
+---
+
+**Enhanced Query Processing Pipeline:**  
 ↓  
-[QueryIntentClassifier.get_query_context_hints, Line no: 56, core/query_intent_classifier.py](https://github.com/kumarb/codebase-qa/blob/main/core/query_intent_classifier.py#L56)  
-  └─ Optionally extracts relevant keywords or anchors based on classified intent.  
-  └─ These hints boost relevant context retrieval.  
+[ChatHandler.process_query, Line no: 43, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L43)  
+	└─ **NEW**: Enhanced query processing with Phase 3 context + full backward compatibility  
+	└─ **NEW**: Multi-phase processing: Intent → Rewriting → Retrieval → Context → Generation → Ranking  
 ↓  
-[Retriever.get_relevant_documents, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py)  
-  └─ Performs vector similarity search in Chroma vector store.  
-  └─ Retrieves top-k most semantically relevant code chunks for user query.  
+[QueryIntentClassifier.classify_intent, Line no: 34, core/query_intent_classifier.py](https://github.com/anilbattini/codebase-qa/blob/main/core/query_intent_classifier.py#L34)  
+	└─ Applies pattern-based matching on user query to classify intent (overview, technical, business_logic, ui_flow, impact_analysis)  
+	└─ Returns intent label and confidence score to inform retrieval strategy  
+	└─ **NEW**: Enhanced intent classification with confidence scoring  
 ↓  
-[ChatHandler & RetrievalQA (combined with LangChain library), core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py)  
-  └─ Constructs prompt consisting of user query plus retrieved code chunks with metadata.  
-  └─ Sends prompt to Ollama LLM for natural language generation of the answer.  
+[ChatHandler._rewrite_query_with_intent, Line no: 263, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L263)  
+	└─ **NEW**: Enhanced query rewriting with intent awareness  
+	└─ **NEW**: Uses centralized rewrite chain with project type and intent context  
+	└─ **NEW**: Includes fallback logic if rewriting fails  
 ↓  
-[build_rag.get_impact, Line no: 379, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L379)  
-  └─ Optionally performs impact analysis tracing file dependencies for related/affected code.  
-  └─ Returns list of impacted files to augment response metadata.  
+[ChatHandler._retrieve_with_fallback, Line no: 176, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L176)  
+	└─ **NEW**: Multi-fallback retrieval strategy for robust document finding  
+	└─ **NEW**: Strategy 1: Try rewritten query first  
+	└─ **NEW**: Strategy 2: Fall back to original query if no results  
+	└─ **NEW**: Strategy 3: Extract key terms and search with those  
+	└─ **NEW**: Comprehensive logging of each retrieval attempt  
 ↓  
-[UIComponents.render_chat_history, Line no: 282, core/ui_components.py](https://github.com/kumarb/codebase-qa/blob/main/core/ui_components.py#L282)  
-  └─ Renders generated answer, source chunk attributions, and impact metadata in UI.  
-  └─ Supports expansion, chat context, and debug information display.
+[QueryIntentClassifier.get_query_context_hints, Line no: 64, core/query_intent_classifier.py](https://github.com/anilbattini/codebase-qa/blob/main/core/query_intent_classifier.py#L64)  
+	└─ Extracts relevant keywords or anchors based on classified intent  
+	└─ These hints boost relevant context retrieval and improve accuracy  
+↓  
+[Retriever.invoke via session state, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py)  
+	└─ Performs vector similarity search in Chroma vector store  
+	└─ Retrieves top-k most semantically relevant code chunks for user query  
+	└─ **NEW**: Uses consistent embedding model to prevent dimension mismatches  
+
+---
+
+**Phase 3 Enhanced Context Assembly:**  
+↓  
+[ContextBuilder.build_enhanced_context, Line no: 75, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L75)  
+	└─ **NEW**: Multi-strategy context assembly using cross-references  
+	└─ **NEW**: Supports both original hierarchical context and enhanced layered context  
+	└─ **NEW**: Selects appropriate context strategies based on query intent  
+↓  
+[ContextBuilder._select_strategies, Line no: 197, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L197)  
+	└─ **NEW**: Selects context building strategies based on intent:  
+		└─ Overview: Hierarchical + Project Structure  
+		└─ Technical: Call Flow + Implementation Details  
+		└─ Business Logic: Inheritance + Validation Rules  
+		└─ Impact Analysis: Impact + Dependency Chains  
+↓  
+[ContextBuilder._build_hierarchical_context, Line no: 222, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L222)  
+	└─ **NEW**: Builds hierarchical context layer using project structure  
+↓  
+[ContextBuilder._build_call_flow_context, Line no: 242, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L242)  
+	└─ **NEW**: Builds call flow context layer using function relationships  
+↓  
+[ContextBuilder._build_inheritance_context, Line no: 268, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L268)  
+	└─ **NEW**: Builds inheritance context layer using class hierarchies  
+↓  
+[ContextBuilder._build_impact_context, Line no: 294, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L294)  
+	└─ **NEW**: Builds impact analysis context layer using dependency chains  
+↓  
+[ContextBuilder._rank_context_layers, Line no: 332, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L332)  
+	└─ **NEW**: Ranks context layers by relevance to query intent  
+↓  
+[ContextBuilder.format_context_for_llm, Line no: 355, core/context_builder.py](https://github.com/anilbattini/codebase-qa/blob/main/core/context_builder.py#L355)  
+	└─ **NEW**: Formats enhanced multi-layered context for LLM consumption  
+
+---
+
+**Enhanced Query Generation and Processing:**  
+↓  
+[ChatHandler._create_enhanced_query_v2, Line no: 207, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L207)  
+	└─ **NEW**: Creates enhanced query with Phase 3 context integration  
+	└─ **NEW**: Uses comprehensive multi-layered context analysis  
+	└─ **NEW**: Includes fallback to original enhanced query method for compatibility  
+↓  
+[ChatHandler._analyze_impact_with_intent, Line no: 295, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L295)  
+	└─ **NEW**: Performs impact analysis if applicable to intent (impact_analysis queries)  
+	└─ **NEW**: Extracts file mentions and traces dependency chains  
+↓  
+[RetrievalQA chain via provider-specific LLM, core/rag_manager.py](https://github.com/anilbattini/codebase-qa/blob/main/core/rag_manager.py)  
+	└─ Constructs prompt consisting of user query plus retrieved code chunks with enhanced context  
+	└─ **NEW**: Uses ModelConfig.get_llm() factory for provider-agnostic LLM access  
+		└─ Sends prompt to configured LLM (Ollama or Cloud) for natural language generation  
+↓  
+[ChatHandler._rerank_docs_by_intent, Line no: 230, core/chat_handler.py](https://github.com/anilbattini/codebase-qa/blob/main/core/chat_handler.py#L230)  
+	└─ **NEW**: Document re-ranking based on intent and relevance scoring  
+	└─ **NEW**: Intent-aware scoring that prioritizes relevant document types  
+	└─ **NEW**: Returns actual Document objects (not just file name strings)  
+↓  
+[build_rag.get_impact, Line no: 589, core/build_rag.py](https://github.com/anilbattini/codebase-qa/blob/main/core/build_rag.py#L589)  
+	└─ Performs impact analysis tracing file dependencies for related/affected code  
+	└─ Returns list of impacted files to augment response metadata  
+	└─ **NEW**: Uses normalized path handling for cross-platform compatibility  
+↓  
+[UIComponents.render_chat_history, Line no: 359, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L359)  
+	└─ Renders generated answer, source chunk attributions, and impact metadata in UI  
+	└─ Supports expansion, chat context, and debug information display  
+	└─ **NEW**: Enhanced metadata display with intent, confidence, rewritten query  
+	└─ **NEW**: Handles both old (4 items) and new (5 items) chat history formats for backward compatibility  
+	└─ **NEW**: Shows top 5 sources with detailed metadata and chunk information  
+
+---
+
+**Debug Tools Integration (When Debug Mode Enabled):**  
+↓  
+[UIComponents.render_debug_section, Line no: 388, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L388)  
+	└─ **NEW**: Shows comprehensive debug tools in expandable section  
+	└─ **NEW**: Vector DB Inspector: Database statistics and health checking  
+	└─ **NEW**: Chunk Analyzer: File-specific chunk analysis with metadata  
+	└─ **NEW**: Retrieval Tester: Query performance testing with relevance scores  
+	└─ **NEW**: Build Status: Database file analysis and tracking status  
+	└─ **NEW**: Logs Viewer: Real-time log file access with download capability  
+	└─ **NEW**: All tools use existing session state retriever (no recreation)  
+
+---
+
+**Processing Logs and Monitoring:**  
+↓  
+[UIComponents.render_processing_logs, Line no: 646, core/ui_components.py](https://github.com/anilbattini/codebase-qa/blob/main/core/ui_components.py#L646)  
+	└─ **NEW**: Renders processing logs section with scrollable display  
+	└─ **NEW**: Shows last 50 logs to prevent overwhelming display  
+	└─ **NEW**: Provides clear and copy actions for log management  
+	└─ **NEW**: Only visible when debug mode is enabled
+```
