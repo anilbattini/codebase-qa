@@ -32,8 +32,10 @@ ui = UIComponents()
 rag_manager.initialize_session_state()
 log_highlight("app.py: Initial setup complete")
 
+
 # 2. Sidebar and Main UI Rendering
-project_dir, ollama_model, ollama_endpoint, force_rebuild, debug_mode = ui.render_sidebar_config()
+config_result = ui.render_sidebar_config()
+project_dir, ollama_model, ollama_endpoint, force_rebuild, debug_mode, config_complete = config_result
 
 # Render build status if in progress
 ui.render_build_status()
@@ -43,18 +45,26 @@ if project_dir:
     project_dir = os.path.abspath(project_dir)
     st.session_state["project_dir"] = project_dir
 
-# ✅ Add Disable RAG (LLM only) toggle to sidebar
+# Add Disable RAG toggle to sidebar
 st.sidebar.markdown("## 🔧 Advanced Options")
 st.sidebar.checkbox("Disable RAG (query LLM directly)", key="disable_rag")
 
-if not st.session_state.selected_project_type:
-    ui.render_welcome_screen()
+# 🚦 ISSUE 2 FIX: Check if configuration is complete
+if not config_complete:
+    # Show appropriate welcome message based on what's missing
+    if not st.session_state.selected_project_type:
+        ui.render_welcome_screen()
+        st.info("🎯 **Step 1**: Please select your project type in the sidebar to continue.")
+    else:
+        ui.render_welcome_screen() 
+        st.info("🔧 **Step 2**: Please select a provider in the sidebar to continue.")
     st.stop()
 
-# A project type has been selected
+# Both project type and provider are selected - proceed with RAG logic
 project_config = rag_manager.get_project_config(st.session_state.selected_project_type)
 ui.render_project_info(project_config)
 ui.render_custom_css()
+
 
 # 3. RAG Index Building
 # Check if force rebuild is requested

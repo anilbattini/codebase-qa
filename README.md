@@ -233,6 +233,7 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Fix rebuild db or force rebuild logic. Currently, db corruption error occurs if we forcestop app and rebuild.
 - Add multi module support including create cross reference graphs on modules level (Adv).
 - Add feature to dynamically pull down the git commit details and history of code to answer questions on it (Adv).
+- Add auto llm model selection feature based on intent(overview, ui_flow, technical, business_logic etc) categorisation (Adv)
 - Add Role based logic retrieval and rewriting the queries (Adv)
 - Show alternate optional answers along with highly ranked answer (Adv)
 - Include PDFs and WebUrls support to go though and answer questions.
