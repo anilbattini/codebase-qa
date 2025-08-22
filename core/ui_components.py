@@ -76,9 +76,71 @@ class UIComponents:
             if ProcessManager.safe_project_type_change():
                 self._render_project_type_selector(project_types)
             
-            ollama_model = st.text_input("🧠 Ollama Model", value=st.session_state.get("ollama_model", model_config.get_ollama_model()))
-            ollama_endpoint = st.text_input("🔗 Ollama Endpoint", value=st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint()))
-            
+            # NEW: Provider selection (empty by default - user must choose)
+            provider_options = ["Choose Provider...", "Ollama (Local)", "Cloud (OpenAI Compatible)"]
+            provider_choice = st.selectbox("🔗 Provider", provider_options, key="provider_selection")
+
+            if provider_choice == "Choose Provider...":
+                st.warning("⚠️ Please select a provider to continue")
+                # Return safe defaults but mark as incomplete
+                return project_dir, model_config.get_ollama_model(), model_config.get_ollama_endpoint(), False, False
+
+            # Configure based on provider selection
+            if provider_choice == "Ollama (Local)":
+                model_config.set_provider("ollama")
+                log_to_sublog(project_dir, "ui_components.log", "Provider set to Ollama (Local)")
+                
+                # Show Ollama configuration
+                ollama_model = st.text_input("🧠 Ollama Model", 
+                                            value=st.session_state.get("ollama_model", model_config.get_ollama_model()))
+                ollama_endpoint = st.text_input("🔗 Ollama Endpoint", 
+                                            value=st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint()))
+
+            elif provider_choice == "Cloud (OpenAI Compatible)":
+                model_config.set_provider("cloud")
+                log_to_sublog(project_dir, "ui_components.log", "Provider set to Cloud (OpenAI Compatible)")
+                
+                # Show cloud endpoint selection
+                cloud_env = os.getenv("CLOUD_ENDPOINT", None)
+                endpoint_options = [
+                    f"From Environment" + (f" ({cloud_env})" if cloud_env else " (Not Set)"),
+                    "Custom Endpoint"
+                ]
+                
+                endpoint_choice = st.selectbox("🌐 Cloud Endpoint", endpoint_options, key="cloud_endpoint_selection")
+                
+                if endpoint_choice == "Custom Endpoint":
+                    custom_endpoint = st.text_input("Enter Cloud Endpoint URL", 
+                                                placeholder="https://api.openai.com/v1",
+                                                key="custom_cloud_endpoint")
+                    if custom_endpoint:
+                        model_config.set_cloud_endpoint(custom_endpoint)
+                        log_to_sublog(project_dir, "ui_components.log", f"Custom cloud endpoint set: {custom_endpoint}")
+                else:
+                    # Use environment variable
+                    model_config.set_cloud_endpoint(None)  # Will use env variable
+                    if not cloud_env:
+                        st.warning("⚠️ CLOUD_ENDPOINT environment variable not set!")
+                    log_to_sublog(project_dir, "ui_components.log", f"Using cloud endpoint from env: {cloud_env}")
+                
+                # Show cloud configuration info
+                api_key = model_config.get_cloud_api_key()
+                if api_key:
+                    st.success(f"✅ Cloud API key found (sk-...{api_key[-4:] if len(api_key) > 4 else '***'})")
+                else:
+                    st.error("❌ CLOUD_API_KEY environment variable not set!")
+                    st.info("💡 Set CLOUD_API_KEY environment variable to use cloud provider")
+                
+                st.info(f"🤖 Using model: **{model_config.get_cloud_model()}**")
+                
+                # For cloud provider, we still need ollama for embeddings (always local)
+                st.subheader("🔗 Local Ollama (for embeddings)")
+                ollama_model = st.text_input("🧠 Ollama Model (for embeddings)", 
+                                            value=st.session_state.get("ollama_model", model_config.get_ollama_model()))
+                ollama_endpoint = st.text_input("🔗 Ollama Endpoint (for embeddings)", 
+                                            value=st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint()))
+
+                        
             # Log configuration changes
             current_model = st.session_state.get("ollama_model", model_config.get_ollama_model())
             current_endpoint = st.session_state.get("ollama_endpoint", model_config.get_ollama_endpoint())
