@@ -14,16 +14,38 @@ class ChatHandler:
     🆕 Now with Phase 3 enhanced context capabilities.
     """
 
-    def __init__(self, llm, project_config, project_dir="."):
+    def __init__(self, llm, provider, project_config, project_dir=".", rewrite_llm=None):
+        self.project_dir = project_dir
         self.llm = llm
         self.project_config = project_config
+        self.provider = provider
+        
+        # # 🔧 FIX: Validate LLM connectivity
+        # try:
+        #     test_response = self.llm.invoke("Test connection")
+        #     log_to_sublog(project_dir, "chat_handler.log", f"Main LLM test: {type(test_response)}")
+        # except Exception as e:
+        #     log_to_sublog(project_dir, "chat_handler.log", f"Main LLM connection failed: {e}")
+        #     raise ValueError(f"Main LLM not responsive: {e}")
+        
+        # Always use local Ollama for rewriting
+        self.rewrite_llm = rewrite_llm if rewrite_llm is not None else llm
+        
+        # 🔧 FIX: Test rewrite LLM
+        # try:
+        #     test_rewrite = self.rewrite_llm.invoke("Test rewrite")
+        #     log_to_sublog(project_dir, "chat_handler.log", f"Rewrite LLM test: {type(test_rewrite)}")
+        # except Exception as e:
+        #     log_to_sublog(project_dir, "chat_handler.log", f"Rewrite LLM connection failed: {e}")
+            
+        self.rewrite_chain = self._create_rewrite_chain()
+        
         self.context_builder = ContextBuilder(project_config, project_dir=project_dir)
         self.query_intent_classifier = QueryIntentClassifier(project_config)
-        self.rewrite_chain = self._create_rewrite_chain()
-        self.project_dir = project_dir
+
 
     def _create_rewrite_chain(self):
-        """Create a chain for rewriting queries to be more searchable."""
+        """Create a chain for rewriting queries to be more searchable using the dedicated rewrite LLM."""
         prompt = PromptTemplate(
             input_variables=["original", "project_type", "intent"],
             template=(
@@ -36,55 +58,51 @@ class ChatHandler:
                 "include terms like: main activity, MainActivity, application, app purpose, project structure, "
                 "manifest, build.gradle, README, documentation.\n\n"
                 "Search Query:"
-            )
+            ),
         )
-        return prompt | self.llm
+        return prompt | self.rewrite_llm
+
 
     def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):
         """
-        🔧 COMPLETE: Enhanced query processing with Phase 3 context + full backward compatibility.
+        Enhanced query processing with Phase 3 context.
         Returns: (answer, reranked_docs, impact_files, metadata)
         """
         log_highlight("ChatHandler.process_query")
-        
-        # Ensure thinking_logs is initialized
         st.session_state.setdefault("thinking_logs", [])
         st.session_state.thinking_logs.append("🧠 Starting enhanced query processing...")
         update_logs(log_placeholder)
         log_to_sublog(self.project_dir, "chat_handler.log", f"Starting query processing: {query}")
 
         try:
-            # Phase 1: Intent classification  
+            # Phase 1: Intent
             intent, confidence = self.query_intent_classifier.classify_intent(query)
             st.session_state.thinking_logs.append(f"🎯 Detected intent: {intent} (confidence: {confidence:.2f})")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
-
             if debug_mode:
                 st.info(f"🎯 **Query Intent**: {intent} (confidence: {confidence:.2f})")
 
+            # Optional bypass
             disable_rag = st.session_state.get("disable_rag", False)
-            
             if disable_rag:
                 st.session_state.thinking_logs.append("⚙️ RAG is disabled – sending query directly to LLM.")
                 update_logs(log_placeholder)
                 log_to_sublog(self.project_dir, "chat_handler.log", "RAG disabled - sending query directly to LLM")
-                
-                # Direct LLM call without RAG
-                result = qa_chain.invoke({"query": query})
-                answer = result.get("result", "Sorry, I couldn't generate an answer.")
+                result = self.llm.invoke(f"User question: {query}")
+                answer = getattr(result, "content", str(result))
                 return answer, [], [], {"intent": intent, "confidence": confidence}
 
-            # Phase 2: Enhanced query rewriting
+            # Phase 2: Rewriting (local Ollama)
             rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
             log_to_sublog(self.project_dir, "chat_handler.log", f"Query rewritten: '{query}' -> '{rewritten}'")
 
-            # Phase 3: Impact analysis (if applicable)
+            # Phase 3: Impact analysis
             impact_files, impact_context = self._analyze_impact_with_intent(query, intent, log_placeholder)
             if impact_files:
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Impact analysis: {len(impact_files)} files affected")
 
-            # Phase 4: Document retrieval with fallback strategy
+            # Phase 4: Retrieval (existing retriever)
             st.session_state.thinking_logs.append("📖 Performing intelligent document retrieval...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Starting document retrieval...")
@@ -95,57 +113,17 @@ class ChatHandler:
                 log_to_sublog(self.project_dir, "chat_handler.log", "ERROR: No retriever found")
                 return "Please rebuild the RAG index before querying.", [], [], {}
 
-            # Retrieve documents with fallback strategy
             retrieved_docs = self._retrieve_with_fallback(retriever, query, rewritten, log_placeholder)
-            
             if debug_mode:
                 st.info(f"📊 Retrieved {len(retrieved_docs)} chunks")
 
-            # Phase 5: 🆕 NEW: Enhanced context assembly (Phase 3 feature)
+            # Phase 5: Build Phase 3 enhanced context
             st.session_state.thinking_logs.append("🏗️ Building enhanced context window...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Building enhanced context window...")
-
-            try:
-                # Try Phase 3 enhanced context building
-                enhanced_context = self.context_builder.build_enhanced_context(
-                    retrieved_docs, query, intent
-                )
-                
-                # Format context for LLM (Phase 3 feature)
-                formatted_context = self.context_builder.format_context_for_llm(enhanced_context)
-                
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 enhanced context built: {len(formatted_context)} characters")
-                
-                # Create enhanced prompt with Phase 3 context
-                enhanced_query = self._create_enhanced_query_v2(
-                    query, rewritten, intent, impact_context, formatted_context
-                )
-                
-            except Exception as e:
-                # Fallback to original context building
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 context building failed, using fallback: {e}")
-                
-                # Use original context building approach
-                query_hints = self.query_intent_classifier.get_query_context_hints(intent, query)
-                enhanced_query = self._create_enhanced_query(
-                    query, rewritten, intent, impact_context, ""
-                )
-
-            # Phase 6: Generate answer
-            st.session_state.thinking_logs.append("🤖 Generating answer with enhanced context...")
-            update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", "Generating answer with enhanced context...")
-
-            # Invoke QA chain
-            result = qa_chain.invoke({"query": enhanced_query})
-            answer = result.get("result", "Sorry, I couldn't generate an answer.")
-            source_documents = result.get("source_documents", retrieved_docs)
-
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Answer generated: {len(answer)} characters")
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Source documents: {len(source_documents)} documents")
-
-            # Phase 7: Rerank documents by intent
+            
+             # Rerank and metadata
+            source_documents = retrieved_docs
             if source_documents:
                 reranked_docs = self._rerank_docs_by_intent(source_documents, query, intent)
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
@@ -153,25 +131,87 @@ class ChatHandler:
                 reranked_docs = []
                 log_to_sublog(self.project_dir, "chat_handler.log", "No source documents to rerank")
 
+            try:
+                enhanced_context = self.context_builder.build_enhanced_context(reranked_docs, query, intent)
+                formatted_context = self.context_builder.format_context_for_llm(enhanced_context)
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 enhanced context built: {len(formatted_context)} characters")
+            except Exception as e:
+                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 context building failed, using fallback: {e}")
+                formatted_context = ""
+
+            # Phase 6: Generate final answer with provider-specific prompt handling
+            st.session_state.thinking_logs.append("🤖 Generating answer...")
+            update_logs(log_placeholder)
+            log_to_sublog(self.project_dir, "chat_handler.log", "Generating final answer...")
+            
+            if self.provider == 'cloud' and hasattr(self.llm, 'invoke_with_system_user'):
+                # 🎯 CLOUD: Use direct system/user separation for CustomLLMClient
+                system_prompt = (
+                    "You are a senior codebase analyst. Answer ONLY using the Context below.\n\n"
+                    "Instructions:\n"
+                    "- Use the Context strictly; do not invent facts or generalities.\n"
+                    "- Cite specific files/chunks from the Context when explaining.\n"
+                    "- If the Context lacks enough information, say: \"Insufficient context to answer precisely.\"\n"
+                    "- Provide a concise, definitive answer tailored to the intent."
+                )
+                
+                user_prompt = (
+                    f"=== Context ===\n{formatted_context}\n\n"
+                    f"=== Original Query ===\n{query}\n\n"
+                    f"=== Rewritten Query ===\n{rewritten}\n\n"
+                    f"=== Intent ===\n{intent}\n\n"
+                    f"Answer:"
+                )
+                
+                result = self.llm.invoke_with_system_user(system_prompt, user_prompt)
+                answer = getattr(result, "content", str(result))
+            
+            else:
+                # 🎯 OLLAMA + CLOUD FALLBACK: Use PromptTemplate chain
+                final_prompt = PromptTemplate(
+                    input_variables=["context", "original", "rewritten", "intent"],
+                    template=(
+                        "You are a senior codebase analyst. Answer ONLY using the Context below.\n\n"
+                        "=== Context ===\n{context}\n\n"
+                        "=== Original Query ===\n{original}\n\n"
+                        "=== Rewritten Query ===\n{rewritten}\n\n"
+                        "=== Intent ===\n{intent}\n\n"
+                        "Instructions:\n"
+                        "- Use the Context strictly; do not invent facts or generalities.\n"
+                        "- Cite specific files/chunks from the Context when explaining.\n"
+                        "- If the Context lacks enough information, say: \"Insufficient context to answer precisely.\"\n"
+                        "- Provide a concise, definitive answer tailored to the intent.\n\n"
+                        "Answer:"
+                    ),
+                )
+                
+                final_chain = final_prompt | self.llm
+                result = final_chain.invoke({
+                    "context": formatted_context,
+                    "original": query,
+                    "rewritten": rewritten,
+                    "intent": intent,
+                })
+                answer = getattr(result, "content", str(result))
+
             st.session_state.thinking_logs.append("✅ Answer generated successfully!")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Query processing completed successfully")
 
-            # Create metadata for UI display
             metadata = {
                 "intent": intent,
                 "confidence": confidence,
                 "rewritten_query": rewritten,
-                "enhanced_query": enhanced_query[:200] + "..." if len(enhanced_query) > 200 else enhanced_query,
-                "phase_3_enabled": True
+                "enhanced_query": None,  # superseded by structured prompt
+                "phase_3_enabled": True,
             }
-
             return answer, reranked_docs, impact_files, metadata
 
         except Exception as e:
             st.error(f"❌ Error processing query: {e}")
             log_to_sublog(self.project_dir, "chat_handler.log", f"Error processing query: {e}")
             return f"Sorry, I encountered an error while processing your query: {e}", [], [], {}
+
 
     def _retrieve_with_fallback(self, retriever, query, rewritten, log_placeholder):
         """Retrieve documents with multiple fallback strategies."""
@@ -205,27 +245,30 @@ class ChatHandler:
             return []
 
     def _create_enhanced_query_v2(self, original_query, rewritten_query, intent, impact_context, phase3_context):
-        """🆕 NEW: Create enhanced query with Phase 3 context."""
-        if phase3_context:
-            return f"""Based on this comprehensive multi-layered context analysis:
+        """Create final-answer prompt content with Phase 3 context."""
+        return f"""You are a senior codebase analyst. Answer ONLY using the Context below.
 
-{phase3_context}
+    === Context ===
+    {phase3_context if phase3_context else "(no additional context)"}
 
-Original Query: {original_query}
-Intent: {intent}
+    === Original Query ===
+    {original_query}
 
-Provide a detailed, accurate answer that:
-1. Uses information from multiple context layers
-2. Explains relationships and dependencies  
-3. Provides concrete examples from the codebase
-4. Addresses the specific intent of the query
+    === Rewritten Query ===
+    {rewritten_query}
 
-Answer:"""
-        else:
-            # Fallback to original method
-            return self._create_enhanced_query(original_query, rewritten_query, intent, impact_context, "")
+    === Intent ===
+    {intent}
 
-    # 🔧 PRESERVE: Keep all existing helper methods unchanged
+    {("=== Impact ===\n" + impact_context) if impact_context else ""}
+
+    Instructions:
+    - Use the Context strictly; do not invent facts or generalities.
+    - Cite specific files/chunks from the Context when explaining.
+    - If the Context lacks enough information, say: "Insufficient context to answer precisely."
+    - Provide a concise, definitive answer tailored to the intent.
+
+    Now provide the answer:"""
     
     def _rerank_docs_by_intent(self, source_documents, query, intent):
         """Rerank and return actual Document objects (not file name strings)."""
