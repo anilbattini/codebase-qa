@@ -31,6 +31,20 @@ class ContextBuilder:
             'impact': self._build_impact_context
         }
 
+    def _filter_valid_documents(self, documents: List[Document]) -> List[Document]:
+        valid = []
+        for d in documents:
+            try:
+                txt = (d.page_content or "").strip()
+                if not txt or len(txt) < 40:
+                    continue
+                if "error_during_filtering" in txt.lower():
+                    continue
+                valid.append(d)
+            except Exception:
+                continue
+        return valid
+
     def load_context_data(self) -> bool:
         """
         🆕 NEW: Load cross-reference and hierarchical data for context assembly.
@@ -72,29 +86,46 @@ class ContextBuilder:
             return False
 
 
-    def build_enhanced_context(self, documents: List[Document], query: str, 
-                             intent: str = 'general') -> str:
-        """
-        🔧 EXTENDED: Now supports multi-strategy context assembly.
-        Maintains backward compatibility with existing code.
-        """
+    def build_enhanced_context(self, documents: List[Document], query: str, intent: str = 'general') -> str:
+        """🔧 ENHANCED with debugging."""
+        documents = self._filter_valid_documents(documents)
+        
+        # 🆕 DEBUG: Log document quality
+        error_docs = [d for d in documents if "error_during_filtering" in str(d.metadata.get('source', ''))]
+        valid_docs = [d for d in documents if "error_during_filtering" not in str(d.metadata.get('source', ''))]
+        
+        log_to_sublog(self.project_dir, "context_builder.log", 
+                    f"Document quality check: {len(valid_docs)} valid, {len(error_docs)} error docs")
+        
+        if len(error_docs) > len(valid_docs):
+            log_to_sublog(self.project_dir, "context_builder.log", 
+                        "WARNING: More error documents than valid ones - check document processing")
+        
+        # Use only valid documents for context building
+        documents = valid_docs
         
         # Phase 1: Always build original hierarchical context for backward compatibility
         original_context = self._build_original_hierarchical_context(documents, query, intent)
         
-        # Phase 2: 🆕 NEW: Add advanced context layers if cross-references available
+        # 🆕 DEBUG: Check cross-reference availability
+        log_to_sublog(self.project_dir, "context_builder.log", 
+                    f"Cross-references available: {self.cross_references is not None}")
+        
+        # Phase 2: Add advanced context layers if cross-references available
         if self.cross_references:
             try:
                 enhanced_context = self._build_enhanced_layered_context(documents, query, intent)
+                log_to_sublog(self.project_dir, "context_builder.log", 
+                            f"Enhanced context layers: {len(enhanced_context.get('context_layers', {}))}")
                 return self.format_context_for_llm(enhanced_context)
             except Exception as e:
                 log_to_sublog(self.project_dir, "context_builder.log", 
-                             f"Advanced context assembly failed: {e}")
+                            f"Advanced context assembly failed: {e}")
                 # Fallback to original context
                 return original_context
         
-        # Fallback: Return original context if no cross-references available
         return original_context
+
 
     def _build_original_hierarchical_context(self, documents: List[Document], 
                                            query: str, intent: str) -> str:
@@ -102,6 +133,8 @@ class ContextBuilder:
         🔧 PRESERVED: Original functionality maintained for backward compatibility.
         """
         
+        documents = self._filter_valid_documents(documents)
+
         # Load hierarchy data
         self._load_hierarchy()
         
