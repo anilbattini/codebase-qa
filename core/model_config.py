@@ -9,6 +9,7 @@ Follows clean code principles with getters/setters and proper encapsulation.
 import os
 from typing import Dict, Any, Optional
 
+from custom_llm_client import CustomLLMClient
 from logger import log_highlight
 
 class ModelConfig:
@@ -66,31 +67,18 @@ class ModelConfig:
         self._streaming = value
         log_highlight(f"ModelConfig: Set streaming to {value}")
     
-    # NEW: Centralized LLM Factory Method
+    # Add this import at the top of model_config.py
+    from custom_llm_client import CustomLLMClient
+
     def get_llm(self, **overrides):
         """
         Returns a properly configured LLM client based on current provider.
-        
-        Args:
-            **overrides: Additional parameters to override defaults
-                - model: Override model name
-                - endpoint: Override endpoint
-                - max_tokens: Override max tokens
-                - temperature: Override temperature
-                - streaming: Override streaming mode
-                - Any other LangChain ChatModel parameters
-        
-        Returns:
-            Configured LLM client (ChatOllama or ChatOpenAI)
-        
-        Raises:
-            ValueError: If no provider selected or configuration invalid
-            ImportError: If required packages not installed
+        Now supports CustomLLMClient for cloud providers with Runnable compatibility.
         """
         provider = self.get_provider()
         if provider is None:
             raise ValueError("No provider selected. User must choose provider first.")
-        
+
         # Extract common overrides
         model_override = overrides.pop('model', None)
         endpoint_override = overrides.pop('endpoint', None)
@@ -101,61 +89,72 @@ class ModelConfig:
             model = model_override or self.get_ollama_model()
             endpoint = endpoint_override or self.get_ollama_endpoint()
             
-            # Build parameters for ChatOllama
             params = {
                 'model': model,
                 'base_url': endpoint
             }
-            
-            # Add any additional overrides that ChatOllama supports
             params.update(overrides)
             
             log_highlight(f"ModelConfig: Creating Ollama LLM - {model} at {endpoint}")
             return ChatOllama(**params)
             
         elif provider == 'cloud':
-            try:
-                from langchain_openai import ChatOpenAI
-            except ImportError:
-                raise ImportError("langchain_openai package required for cloud provider. Install with: pip install langchain-openai")
+            # 🆕 NEW: Use Runnable-compatible CustomLLMClient
+            from custom_llm_client import CustomLLMClient
             
-            # Verify configuration
             api_key = self.get_cloud_api_key()
             if not api_key:
                 raise ValueError("CLOUD_API_KEY environment variable not set")
-            
+                
             endpoint = endpoint_override or self.get_cloud_endpoint()
             if not endpoint:
                 raise ValueError("Cloud endpoint not configured")
-            
+                
             model = model_override or self.get_cloud_model()
             
-            # Build parameters for ChatOpenAI
-            params = {
-                'model': model,
-                'api_key': api_key,
-                'base_url': endpoint,
-                'max_tokens': overrides.pop('max_tokens', self.get_max_tokens()),
-                'temperature': overrides.pop('temperature', self.get_temperature()),
-                'streaming': overrides.pop('streaming', self.get_streaming())
-            }
+            # Extract parameters for CustomLLMClient
+            max_tokens = overrides.pop('max_tokens', self.get_max_tokens())
+            temperature = overrides.pop('temperature', self.get_temperature())
             
-            # Add any additional overrides
-            params.update(overrides)
+            log_highlight(f"ModelConfig: Creating Runnable CustomLLMClient - {model} at {endpoint}")
             
-            log_highlight(f"ModelConfig: Creating Cloud LLM - {model} at {endpoint}")
-            return ChatOpenAI(**params)
-            
+            return CustomLLMClient(
+                endpoint=endpoint,
+                api_key=api_key,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                project_dir=getattr(self, 'project_dir', '.')
+            )
+        
         else:
             raise ValueError(f"Unsupported provider: {provider}")
+
+
     
     def get_rewrite_llm(self, **overrides):
         """
         Get LLM specifically for query rewriting.
-        Currently uses same as main LLM, but can be configured differently.
+
+        Always uses local Ollama, regardless of the main provider selection.
         """
-        # Future enhancement: make this independently configurable
-        return self.get_llm(**overrides)
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError:
+            raise ImportError("langchain_ollama package required for rewrite LLM. Install with: pip install langchain-ollama")
+
+        model = overrides.pop('model', self.get_ollama_model())
+        endpoint = overrides.pop('endpoint', self.get_ollama_endpoint())
+
+        params = {
+            'model': model,
+            'base_url': endpoint,
+        }
+        params.update(overrides)
+
+        log_highlight(f"ModelConfig: Creating Rewrite LLM (Ollama) - {model} at {endpoint}")
+        return ChatOllama(**params)
+
 
 
     # Existing Ollama Model methods
