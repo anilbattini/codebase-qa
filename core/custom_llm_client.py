@@ -18,7 +18,7 @@ class CustomLLMClient(Runnable):
         """Initialize the custom LLM client with cloud provider settings."""
         super().__init__()  # Initialize Runnable
         
-        self.endpoint = endpoint.rstrip('/') + '/chat/completions'
+        self.endpoint = endpoint
         self.api_key = api_key
         self.model = model
         self.max_tokens = max_tokens
