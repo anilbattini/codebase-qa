@@ -2,6 +2,7 @@
 
 import os
 import streamlit as st
+from model_config import model_config
 from rag_manager import RagManager
 from ui_components import UIComponents
 from chat_handler import ChatHandler
@@ -181,9 +182,17 @@ ui.render_chat_history()
 # Setup chat handler and input form
 if rag_manager.is_ready():
     log_highlight("app.py: RAG system ready, setting up chat handler")
+    # Main LLM for QA (provider-selected)
+    qa_llm = model_config.get_llm()
+    # Dedicated local LLM for rewriting (always Ollama)
+    rewrite_llm = model_config.get_rewrite_llm()
+
     chat_handler = ChatHandler(
-        llm=rag_manager.setup_llm(ollama_model, ollama_endpoint),
-        project_config=project_config
+        llm=qa_llm,
+        provider = model_config.get_provider(),
+        project_config=project_config,
+        project_dir=project_dir,
+        rewrite_llm=rewrite_llm,
     )
     
     query, submitted = ui.render_chat_input()
