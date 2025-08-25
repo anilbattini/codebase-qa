@@ -1,3 +1,4 @@
+from typing import List
 import streamlit as st
 import re
 import os
@@ -63,6 +64,61 @@ class ChatHandler:
         return prompt | self.rewrite_llm
 
 
+    def _create_full_context(self, docs: List) -> str:
+        """
+        Create full context from retrieved documents WITHOUT truncation.
+        🔧 FIX: Provides complete document content to LLM.
+        """
+        if not docs:
+            return "No relevant context found for this query."
+        
+        context_parts = []
+        total_chars = 0
+        max_total_context = 8000  # Reasonable limit for LLM context window
+        
+        for i, doc in enumerate(docs, 1):
+            # Extract full content safely
+            content = getattr(doc, 'page_content', '') or str(doc)
+            metadata = getattr(doc, 'metadata', {})
+            
+            # Get source information
+            source = metadata.get('source', 'unknown')
+            chunk_info = metadata.get('chunk_index', f'chunk_{i}')
+            
+            # Use FULL content, not truncated
+            if content and len(content.strip()) > 0:
+                formatted_section = (
+                    f"📄 Document {i}: {source}\n"
+                    f"{content}\n"
+                    f"{'─' * 50}\n"
+                )
+                
+                # Only limit total context if it becomes excessive
+                if total_chars + len(formatted_section) < max_total_context:
+                    context_parts.append(formatted_section)
+                    total_chars += len(formatted_section)
+                else:
+                    # If we hit limit, at least include a meaningful portion
+                    remaining_space = max_total_context - total_chars - 200
+                    if remaining_space > 500:  # Only if we have meaningful space left
+                        truncated_content = content[:remaining_space] + f"\n[Content truncated - {len(content)} total chars]"
+                        formatted_section = (
+                            f"📄 Document {i}: {source}\n"
+                            f"{truncated_content}\n"
+                            f"{'─' * 50}\n"
+                        )
+                        context_parts.append(formatted_section)
+                    break
+        
+        final_context = '\n'.join(context_parts)
+        
+        # Log the actual context being sent
+        log_to_sublog(self.project_dir, "chat_handler.log", 
+                    f"Final context: {len(final_context)} chars, {len(context_parts)} documents")
+        
+        return final_context
+
+
     def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):
         """
         Enhanced query processing with Phase 3 context.
@@ -117,27 +173,37 @@ class ChatHandler:
             if debug_mode:
                 st.info(f"📊 Retrieved {len(retrieved_docs)} chunks")
 
-            # Phase 5: Build Phase 3 enhanced context
-            st.session_state.thinking_logs.append("🏗️ Building enhanced context window...")
+            # Phase 5: Build enhanced context with FULL content
+            st.session_state.thinking_logs.append("🔧 Building enhanced context...")
             update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", "Building enhanced context window...")
             
-             # Rerank and metadata
+            # Rerank and metadata
             source_documents = retrieved_docs
             if source_documents:
                 reranked_docs = self._rerank_docs_by_intent(source_documents, query, intent)
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
-            else:
-                reranked_docs = []
-                log_to_sublog(self.project_dir, "chat_handler.log", "No source documents to rerank")
 
-            try:
-                enhanced_context = self.context_builder.build_enhanced_context(reranked_docs, query, intent)
-                formatted_context = self.context_builder.format_context_for_llm(enhanced_context)
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 enhanced context built: {len(formatted_context)} characters")
-            except Exception as e:
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Phase 3 context building failed, using fallback: {e}")
-                formatted_context = ""
+            
+            if reranked_docs:
+                # 🔧 FIX: Use full context method instead of truncated
+                formatted_context = self._create_full_context(reranked_docs)
+                
+                # Log context quality
+                log_to_sublog(self.project_dir, "chat_handler.log", 
+                            f"Full context: {len(formatted_context)} characters from {len(reranked_docs)} documents")
+                
+                # Try enhanced context building if available
+                if hasattr(self, 'context_builder') and self.context_builder:
+                    try:
+                        enhanced_context = self.context_builder.build_enhanced_context(reranked_docs, query, intent)
+                        if enhanced_context and len(enhanced_context) > len(formatted_context):
+                            formatted_context = enhanced_context
+                            log_to_sublog(self.project_dir, "chat_handler.log", "Using enhanced context builder")
+                    except Exception as e:
+                        log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced context failed: {e}")
+            else:
+                formatted_context = "No relevant documentation found for this query."
+
 
             # Phase 6: Generate final answer with provider-specific prompt handling
             st.session_state.thinking_logs.append("🤖 Generating answer...")
@@ -160,6 +226,7 @@ class ChatHandler:
                 
                 user_prompt = (
                     f"QUESTION: {query}\n\n"
+                    f"ReWritten query: {rewritten}\n\n"
                     f"CONTEXT TO USE:\n{formatted_context}\n\n"
                     f"Based on the code context above, please answer the question: {query}"
                 )
@@ -170,10 +237,11 @@ class ChatHandler:
             else:
                 # 🎯 OLLAMA + CLOUD FALLBACK: Clearer single prompt structure
                 final_prompt = PromptTemplate(
-                    input_variables=["context", "query"],
+                    input_variables=["context", "query", "rewritten"],
                     template=(
                         "You are a senior codebase analyst answering questions about software projects.\n\n"
                         "QUESTION: {query}\n\n"
+                        "ReWritten query: {rewritten}\n\n"
                         "CODE CONTEXT:\n{context}\n\n"
                         "INSTRUCTIONS:\n"
                         "- Answer the question directly using the code context provided\n"
@@ -188,6 +256,7 @@ class ChatHandler:
                 result = final_chain.invoke({
                     "context": formatted_context,
                     "query": query,
+                    "rewritten": rewritten,
                 })
                 answer = getattr(result, "content", str(result))
 
