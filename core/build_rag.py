@@ -41,13 +41,37 @@ def update_logs(log_placeholder):
             )
 
 def sanitize_metadata(meta: dict) -> dict:
-    return {
-        k: (', '.join(v) if isinstance(v, list)
-            else str(v) if isinstance(v, (dict, set))
-            else v)
-        for k, v in meta.items()
-        if v is None or isinstance(v, (str, int, float, bool, list, dict))
-    }
+    """🔧 ENHANCED: Handle all metadata types safely."""
+    sanitized = {}
+    for k, v in meta.items():
+        try:
+            if v is None:
+                continue
+            elif isinstance(v, (str, int, float, bool)):
+                sanitized[k] = v
+            elif isinstance(v, list):
+                # Convert lists to comma-separated strings, but handle nested structures
+                if v and all(isinstance(item, (str, int, float)) for item in v):
+                    sanitized[k] = ', '.join(str(item) for item in v)
+                else:
+                    # Complex list - convert to JSON string
+                    import json
+                    sanitized[k] = json.dumps(v, default=str)
+            elif isinstance(v, dict):
+                # Convert dict to JSON string
+                import json
+                sanitized[k] = json.dumps(v, default=str)
+            elif isinstance(v, set):
+                sanitized[k] = ', '.join(str(item) for item in sorted(v))
+            else:
+                sanitized[k] = str(v)
+        except Exception as e:
+            # Log the specific field that failed
+            log_to_sublog(".", "build_rag.log", f"Failed to sanitize metadata field '{k}': {v} - {e}")
+            sanitized[k] = f"error_sanitizing_{k}"
+    
+    return sanitized
+
 
 def build_code_relationship_map(documents: List[Document]) -> Dict[str, set]:
     code_relationship_map = {}
