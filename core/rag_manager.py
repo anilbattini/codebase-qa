@@ -31,63 +31,25 @@ class RagManager:
         st.session_state.setdefault("chat_history", [])
     
     def setup_llm(self, ollama_model=None, ollama_endpoint=None):
-        """Setup the language model based on provider configuration."""
-        from langchain_ollama import ChatOllama
-        
-        # Get active provider configuration
+        """Create LLM via centralized model_config factory (single source of truth)."""
+        overrides = {}
+        if ollama_model:
+            overrides['model'] = ollama_model
+        if ollama_endpoint:
+            overrides['endpoint'] = ollama_endpoint
+
+        llm = model_config.get_llm(**overrides)
+        self.llm = llm
         try:
-            llm_config = model_config.get_active_llm_config()
-            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
-                        "rag_manager.log", 
-                        f"Setting up LLM with provider: {llm_config['provider']}")
-            
-            if llm_config['provider'] == 'ollama':
-                # Use provided parameters or fall back to config
-                model = ollama_model or llm_config['model']
-                endpoint = ollama_endpoint or llm_config['endpoint']
-                self.llm = ChatOllama(model=model, base_url=endpoint)
-                log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
-                            "rag_manager.log", 
-                            f"Ollama LLM setup: {model} at {endpoint}")
-                
-            elif llm_config['provider'] == 'cloud':
-                # Import CloudOpenAI/ChatOpenAI
-                try:
-                    from langchain_openai import ChatOpenAI
-                    
-                    # Verify API key
-                    if not llm_config['api_key']:
-                        raise ValueError("CLOUD_API_KEY environment variable not set")
-                    
-                    if not llm_config['endpoint']:
-                        raise ValueError("Cloud endpoint not configured")
-                    
-                    self.llm = ChatOpenAI(
-                        model=llm_config['model'],
-                        api_key=llm_config['api_key'],
-                        base_url=llm_config['endpoint']
-                    )
-                    log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
-                                "rag_manager.log", 
-                                f"Cloud LLM setup: {llm_config['model']} at {llm_config['endpoint']}")
-                                
-                except ImportError:
-                    raise ImportError("langchain_openai package required for cloud provider. Install with: pip install langchain-openai")
-            
-            return self.llm
-        
-        except ValueError as e:
-            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
-                        "rag_manager.log", 
-                        f"LLM setup failed: {e}")
-            # Fall back to Ollama with provided parameters
-            model = ollama_model or model_config.get_ollama_model()
-            endpoint = ollama_endpoint or model_config.get_ollama_endpoint()
-            self.llm = ChatOllama(model=model, base_url=endpoint)
-            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".", 
-                        "rag_manager.log", 
-                        f"Fallback to Ollama: {model} at {endpoint}")
-            return self.llm
+            active = model_config.get_active_llm_config()
+            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".",
+                        "rag_manager.log",
+                        f"LLM setup via model_config: provider={active.get('provider')} model={active.get('model')} endpoint={active.get('endpoint')}")
+        except Exception as e:
+            log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".",
+                        "rag_manager.log",
+                        f"LLM setup via model_config (active config unavailable): {e}")
+        return self.llm
 
     
     def cleanup_existing_files(self, project_dir, project_type):
@@ -236,7 +198,7 @@ class RagManager:
             log_to_sublog(project_dir, "rag_manager.log", f"RAG index built for project: {project_dir}")
             
             # Setup LLM first
-            llm = self.setup_llm(ollama_model, ollama_endpoint)
+            llm = model_config.get_llm()
             log_to_sublog(project_dir, "rag_manager.log", f"LLM setup: {ollama_model} at {ollama_endpoint}")
             
             # Setup QA chain
@@ -304,7 +266,7 @@ class RagManager:
             log_to_sublog(project_dir, "rag_manager.log", f"Loaded existing RAG index from: {db_dir} with embedding model: {embedding_model}")
             
             # Setup LLM
-            llm = self.setup_llm(ollama_model, ollama_endpoint)
+            llm = model_config.get_llm()
             log_to_sublog(project_dir, "rag_manager.log", f"LLM setup: {ollama_model} at {ollama_endpoint}")
             
             # Setup QA chain
