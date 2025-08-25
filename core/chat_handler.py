@@ -143,54 +143,51 @@ class ChatHandler:
             st.session_state.thinking_logs.append("🤖 Generating answer...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Generating final answer...")
+
             
             if self.provider == 'cloud' and hasattr(self.llm, 'invoke_with_system_user'):
-                # 🎯 CLOUD: Use direct system/user separation for CustomLLMClient
+                # 🎯 CLOUD: Direct system/user separation with crystal clear task definition
                 system_prompt = (
-                    "You are a senior codebase analyst. Answer ONLY using the Context below.\n\n"
-                    "Instructions:\n"
-                    "- Use the Context strictly; do not invent facts or generalities.\n"
-                    "- Cite specific files/chunks from the Context when explaining.\n"
-                    "- If the Context lacks enough information, say: \"Insufficient context to answer precisely.\"\n"
-                    "- Provide a concise, definitive answer tailored to the intent."
+                    "You are a senior codebase analyst. Your task is to answer questions about software projects using only the provided code context.\n\n"
+                    "IMPORTANT RULES:\n"
+                    "- Answer the user's question directly and specifically\n"
+                    "- Use ONLY the code context provided - do not invent or assume information\n" 
+                    "- Cite specific files or code snippets when explaining\n"
+                    "- If insufficient context is provided, state this clearly\n"
+                    "- Focus on answering the actual question, not analyzing the prompt structure\n"
+                    "- Be concise and practical in your response"
                 )
                 
                 user_prompt = (
-                    f"=== Context ===\n{formatted_context}\n\n"
-                    f"=== Original Query ===\n{query}\n\n"
-                    f"=== Rewritten Query ===\n{rewritten}\n\n"
-                    f"=== Intent ===\n{intent}\n\n"
-                    f"Answer:"
+                    f"QUESTION: {query}\n\n"
+                    f"CONTEXT TO USE:\n{formatted_context}\n\n"
+                    f"Based on the code context above, please answer the question: {query}"
                 )
                 
                 result = self.llm.invoke_with_system_user(system_prompt, user_prompt)
                 answer = getattr(result, "content", str(result))
             
             else:
-                # 🎯 OLLAMA + CLOUD FALLBACK: Use PromptTemplate chain
+                # 🎯 OLLAMA + CLOUD FALLBACK: Clearer single prompt structure
                 final_prompt = PromptTemplate(
-                    input_variables=["context", "original", "rewritten", "intent"],
+                    input_variables=["context", "query"],
                     template=(
-                        "You are a senior codebase analyst. Answer ONLY using the Context below.\n\n"
-                        "=== Context ===\n{context}\n\n"
-                        "=== Original Query ===\n{original}\n\n"
-                        "=== Rewritten Query ===\n{rewritten}\n\n"
-                        "=== Intent ===\n{intent}\n\n"
-                        "Instructions:\n"
-                        "- Use the Context strictly; do not invent facts or generalities.\n"
-                        "- Cite specific files/chunks from the Context when explaining.\n"
-                        "- If the Context lacks enough information, say: \"Insufficient context to answer precisely.\"\n"
-                        "- Provide a concise, definitive answer tailored to the intent.\n\n"
-                        "Answer:"
+                        "You are a senior codebase analyst answering questions about software projects.\n\n"
+                        "QUESTION: {query}\n\n"
+                        "CODE CONTEXT:\n{context}\n\n"
+                        "INSTRUCTIONS:\n"
+                        "- Answer the question directly using the code context provided\n"
+                        "- Cite specific files or code when explaining\n"
+                        "- If context is insufficient, say so clearly\n"
+                        "- Be practical and concise\n\n"
+                        "ANSWER:"
                     ),
                 )
                 
                 final_chain = final_prompt | self.llm
                 result = final_chain.invoke({
                     "context": formatted_context,
-                    "original": query,
-                    "rewritten": rewritten,
-                    "intent": intent,
+                    "query": query,
                 })
                 answer = getattr(result, "content", str(result))
 
