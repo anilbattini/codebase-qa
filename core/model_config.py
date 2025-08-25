@@ -152,10 +152,26 @@ class ModelConfig:
     def get_rewrite_llm(self, **overrides):
         """
         Get LLM specifically for query rewriting.
-        Currently uses same as main LLM, but can be configured differently.
+
+        Always uses local Ollama, regardless of the main provider selection.
         """
-        # Future enhancement: make this independently configurable
-        return self.get_llm(**overrides)
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError:
+            raise ImportError("langchain_ollama package required for rewrite LLM. Install with: pip install langchain-ollama")
+
+        model = overrides.pop('model', self.get_ollama_model())
+        endpoint = overrides.pop('endpoint', self.get_ollama_endpoint())
+
+        params = {
+            'model': model,
+            'base_url': endpoint,
+        }
+        params.update(overrides)
+
+        log_highlight(f"ModelConfig: Creating Rewrite LLM (Ollama) - {model} at {endpoint}")
+        return ChatOllama(**params)
+
 
 
     # Existing Ollama Model methods

@@ -457,7 +457,7 @@ class MetadataExtractor:
         return list({c for c in classes if isinstance(c, str) and c})
 
     def extract_dependencies(self, chunk: str) -> List[str]:
-        """Existing method - unchanged for backward compatibility."""
+        """Existing method - hardened for stable dependency tokens."""
         deps = set()
         try:
             lines = chunk.splitlines()
@@ -467,16 +467,24 @@ class MetadataExtractor:
                     if line.startswith("import"):
                         if "from" in line:
                             match = re.search(r'from\s+([^\s]+)', line)
-                            if match: deps.add(match.group(1))
+                            if match:
+                                deps.add(match.group(1))
                         else:
                             parts = line.replace("import ", "").split()
-                            if parts: deps.add(parts[0].split("."))
+                            if parts:
+                                token = parts
+                                # Normalize to top-level package/module token
+                                if '.' in token:
+                                    token = token.split('.')
+                                deps.add(token)
                     elif "require(" in line:
                         match = re.search(r'require\(["\']([^"\']+)["\']', line)
-                        if match: deps.add(match.group(1))
+                        if match:
+                            deps.add(match.group(1))
         except Exception:
             pass
         return list(deps)
+
 
     def extract_input_fields(self, chunk: str) -> List[str]:
         """Existing method - unchanged for backward compatibility."""

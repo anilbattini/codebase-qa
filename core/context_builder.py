@@ -31,6 +31,20 @@ class ContextBuilder:
             'impact': self._build_impact_context
         }
 
+    def _filter_valid_documents(self, documents: List[Document]) -> List[Document]:
+        valid = []
+        for d in documents:
+            try:
+                txt = (d.page_content or "").strip()
+                if not txt or len(txt) < 40:
+                    continue
+                if "error_during_filtering" in txt.lower():
+                    continue
+                valid.append(d)
+            except Exception:
+                continue
+        return valid
+
     def load_context_data(self) -> bool:
         """
         🆕 NEW: Load cross-reference and hierarchical data for context assembly.
@@ -78,7 +92,7 @@ class ContextBuilder:
         🔧 EXTENDED: Now supports multi-strategy context assembly.
         Maintains backward compatibility with existing code.
         """
-        
+        documents = self._filter_valid_documents(documents)
         # Phase 1: Always build original hierarchical context for backward compatibility
         original_context = self._build_original_hierarchical_context(documents, query, intent)
         
@@ -102,6 +116,8 @@ class ContextBuilder:
         🔧 PRESERVED: Original functionality maintained for backward compatibility.
         """
         
+        documents = self._filter_valid_documents(documents)
+
         # Load hierarchy data
         self._load_hierarchy()
         

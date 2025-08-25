@@ -21,40 +21,47 @@ class CrossReferenceQuery:
         self.inheritance_index = None
 
     def load_cross_references(self) -> bool:
-        """Load cross-reference data from storage."""
         try:
             db_dir = self.project_config.get_db_dir()
-            
-            # Load main cross-reference file
             cross_ref_file = os.path.join(db_dir, "cross_references.json")
             if os.path.exists(cross_ref_file):
                 with open(cross_ref_file, 'r', encoding='utf-8') as f:
                     self.cross_references = json.load(f)
-            
-            # Load quick-lookup indexes
             usage_file = os.path.join(db_dir, "symbol_usage_index.json")
             if os.path.exists(usage_file):
                 with open(usage_file, 'r', encoding='utf-8') as f:
                     self.symbol_usage_index = json.load(f)
-            
             call_graph_file = os.path.join(db_dir, "call_graph_index.json")
             if os.path.exists(call_graph_file):
                 with open(call_graph_file, 'r', encoding='utf-8') as f:
                     self.call_graph_index = json.load(f)
-            
             inheritance_file = os.path.join(db_dir, "inheritance_index.json")
             if os.path.exists(inheritance_file):
                 with open(inheritance_file, 'r', encoding='utf-8') as f:
                     self.inheritance_index = json.load(f)
-            
-            log_to_sublog(self.project_dir, "cross_reference_query.log", 
-                         "Cross-reference data loaded successfully")
-            return True
-            
+            ok = any([self.cross_references, self.symbol_usage_index, self.call_graph_index, self.inheritance_index])
+            log_to_sublog(self.project_dir, "cross_reference_query.log", f"Cross-reference data loaded: {ok}")
+            return ok
         except Exception as e:
-            log_to_sublog(self.project_dir, "cross_reference_query.log", 
-                         f"Failed to load cross-reference  {e}")
+            log_to_sublog(self.project_dir, "cross_reference_query.log", f"Failed to load cross-reference {e}")
             return False
+
+    def find_api_interactions(self, api_endpoint: str) -> Dict:
+        """Level 3: Components interacting with APIEndpoint."""
+        if not self.cross_references:
+            return {'api_endpoint': api_endpoint, 'interactions': []}
+        results = []
+        api_usage_map = self.cross_references.get('api_usage', {}) or {}
+        try:
+            for doc_key, doc_usages in api_usage_map.items():
+                if isinstance(doc_usages, list):
+                    for usage in doc_usages:
+                        if api_endpoint.lower() in str(usage).lower():
+                            results.append(usage)
+        except Exception:
+            pass
+        return {'api_endpoint': api_endpoint, 'interactions': results}
+
 
     def find_symbol_definition(self, symbol_name: str) -> Optional[Dict]:
         """Level 2: Where is ClassName/MethodName defined?"""
@@ -127,22 +134,6 @@ class CrossReferenceQuery:
             'complete_hierarchy': self._build_complete_call_hierarchy(function_name)
         }
 
-    def find_api_interactions(self, api_endpoint: str) -> Dict:
-        """Level 3: Components interacting with APIEndpoint."""
-        if not self.cross_references:
-            return {'interactions': []}
-            
-        # Search through API usage patterns
-        results = []
-        for doc_data in self.cross_references.get('api_usage', {}).values():
-            for usage in doc_
-                if api_endpoint.lower() in str(usage).lower():
-                    results.append(usage)
-        
-        return {
-            'api_endpoint': api_endpoint,
-            'interactions': results
-        }
 
     def get_module_dependencies(self, module_name: str) -> Dict:
         """Level 3: Internal and external dependencies of ModuleName."""
