@@ -23,19 +23,7 @@ if "HF_HOME" not in os.environ:
 
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_completions():
-    data = request.json
-    model_name = data.get('model', 'llama3.1:latest')  # Default to llama3.1:latest if not specified
-    messages = data.get('messages', [])
-    max_new_tokens = data.get('max_tokens', 3000)  # Use max_new_tokens for Hugging Face
-    temperature = data.get('temperature', 0.1)
-
-    # Extract the user prompt from the messages
-    prompt = ""
-    if messages and isinstance(messages, list):
-        for message in messages:
-            if message.get('role') == 'user':
-                prompt = message.get('content', '')
-                
+    
     def log_to_sublog(project_dir, subname, msg):
         """Write to sublog, handling all path resolution internally."""
         logfile = os.path.join(_get_logs_dir(project_dir), subname)
@@ -99,26 +87,81 @@ def chat_completions():
             os.makedirs(temp_dir, exist_ok=True)
             return temp_dir
     
+    data = request.json
+    model_name = data.get('model', 'llama3.1:latest')
+    messages = data.get('messages', [])
+    max_tokens = data.get('max_tokens', 3000)
+    temperature = data.get('temperature', 0.1)
+    
+    # Extract the user prompt from the messages
+    prompt = ""
+    if messages and isinstance(messages, list):
+        for message in messages:
+            if message.get('role') == 'user':
+                prompt = message.get('content', '')
+                break
+    
     if USE_OLLAMA:
-        model_name = "llama3.1:latest" # Always override model name for OLLAMA
-        # Call the Ollama model using subprocess
-        command = f"""ollama run {model_name} {prompt}"""
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        response_text = result.stdout.strip()
+        model_name = "llama3.1:latest"  # Always override for OLLAMA
+        
+        # 🔧 FIX: Use proper Ollama API call instead of subprocess
+        try:
+            import requests
+            import json
+            
+            # Use Ollama's REST API instead of subprocess
+            ollama_url = "http://localhost:11434/api/generate"
+            
+            payload = {
+                "model": model_name,
+                "prompt": prompt,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens
+                },
+                "stream": False
+            }
+            
+            log_to_sublog(".", "chat_service.log", f"🔧 Sending to Ollama API: model={model_name}, prompt_length={len(prompt)} and prompt:\n {prompt}")
+            
+            response = requests.post(ollama_url, json=payload, timeout=120)
+            
+            if response.status_code == 200:
+                ollama_response = response.json()
+                response_text = ollama_response.get('response', '').strip()
+                
+                if not response_text:
+                    response_text = "No response generated from model."
+                    
+                # log_to_sublog(".", "chat_service.log", f"✅ Ollama API response: {response_text[:200]}...")
+            else:
+                error_msg = f"Ollama API error: {response.status_code} - {response.text}"
+                log_to_sublog(".", "chat_service.log", f"❌ {error_msg}")
+                response_text = f"Model error: {error_msg}"
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Ollama connection failed: {e}"
+            log_to_sublog(".", "chat_service.log", f"❌ {error_msg}")
+            response_text = f"Connection error: {error_msg}"
+            
+        except Exception as e:
+            error_msg = f"Unexpected error: {e}"
+            log_to_sublog(".", "chat_service.log", f"❌ {error_msg}")
+            response_text = f"Service error: {error_msg}"
+    
     else:
-        # Use Hugging Face model
+        # Use Hugging Face model (unchanged)
         generator = pipeline('text-generation', model=model_name)
-        # # Set the device to use MPS if available
-        # device = "mps" if torch.backends.mps.is_available() else "cpu"
-        # # Initialize the Hugging Face model pipeline
-        # generator = pipeline('text-generation', model=model_name, device=0 if device == "mps" else -1)
-        # # Use mixed precision if on MPS
-        # with torch.amp.autocast(device_type='mps' if device == "mps" else 'cpu'):
-        output = generator(prompt, max_new_tokens=2000, num_return_sequences=1, temperature=temperature, truncation=True)
-        # Extract and print the generated text
+        output = generator(prompt, max_new_tokens=max_tokens, num_return_sequences=1, 
+                          temperature=temperature, truncation=True)
         response_text = output[0]['generated_text']
-
-    log_to_sublog(".", "chat_service.log", f"✅ Received request with prompt: {prompt} \n Response: \n{response_text}")
+    
+    # Log the full interaction for debugging
+    log_to_sublog(".", "chat_service.log", 
+                  f"✅ Request: model={model_name}, prompt_chars={len(prompt)}\n"
+                  f"Response: {response_text[:500]}{'...' if len(response_text) > 500 else ''}\n"
+                  f"{'='*50}")
+    
     # Construct the response in OpenAI format
     response = {
         'id': 'cmpl-123456',
@@ -139,7 +182,9 @@ def chat_completions():
             'total_tokens': len(prompt.split()) + len(response_text.split())
         }
     }
+    
     return jsonify(response)
+
 
 if __name__ == '__main__':
     app.run(port=5000)
