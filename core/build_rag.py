@@ -41,8 +41,9 @@ def update_logs(log_placeholder):
             )
 
 def sanitize_metadata(meta: dict) -> dict:
-    """🔧 ENHANCED: Handle all metadata types safely."""
+    """🔧 ENHANCED: Handle all metadata types safely, especially complex Kotlin metadata."""
     sanitized = {}
+    
     for k, v in meta.items():
         try:
             if v is None:
@@ -50,25 +51,43 @@ def sanitize_metadata(meta: dict) -> dict:
             elif isinstance(v, (str, int, float, bool)):
                 sanitized[k] = v
             elif isinstance(v, list):
-                # Convert lists to comma-separated strings, but handle nested structures
-                if v and all(isinstance(item, (str, int, float)) for item in v):
+                # Handle complex nested structures safely
+                if not v:  # Empty list
+                    continue
+                elif all(isinstance(item, (str, int, float)) for item in v):
                     sanitized[k] = ', '.join(str(item) for item in v)
                 else:
-                    # Complex list - convert to JSON string
-                    import json
-                    sanitized[k] = json.dumps(v, default=str)
+                    # Complex list - convert to JSON string with error handling
+                    try:
+                        import json
+                        sanitized[k] = json.dumps(v, default=str, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        sanitized[k] = f"complex_list_{len(v)}_items"
             elif isinstance(v, dict):
-                # Convert dict to JSON string
-                import json
-                sanitized[k] = json.dumps(v, default=str)
+                # Handle complex dictionaries safely
+                try:
+                    import json
+                    sanitized[k] = json.dumps(v, default=str, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    sanitized[k] = f"complex_dict_{len(v)}_keys"
             elif isinstance(v, set):
                 sanitized[k] = ', '.join(str(item) for item in sorted(v))
             else:
-                sanitized[k] = str(v)
+                # Fallback: convert to string safely
+                try:
+                    sanitized[k] = str(v)
+                except Exception:
+                    sanitized[k] = f"unconvertible_{type(v).__name__}"
+                    
         except Exception as e:
-            # Log the specific field that failed
-            log_to_sublog(".", "build_rag.log", f"Failed to sanitize metadata field '{k}': {v} - {e}")
-            sanitized[k] = f"error_sanitizing_{k}"
+            # Log the specific field that failed but don't crash
+            log_to_sublog(".", "build_rag.log", f"Failed to sanitize metadata field '{k}': {type(v)} - {e}")
+            # Keep a placeholder instead of losing the entire document
+            sanitized[k] = f"sanitization_error_{k}"
+    
+    # Ensure source is always present for document tracking
+    if 'source' not in sanitized and 'source' in meta:
+        sanitized['source'] = str(meta['source'])
     
     return sanitized
 
