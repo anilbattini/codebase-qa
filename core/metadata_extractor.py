@@ -165,38 +165,82 @@ class MetadataExtractor:
         return signatures
 
     def _parse_kt_parameters(self, params_str: str) -> List[str]:
-        """Parse Kotlin parameter string - 🔧 FIX: Safe handling."""
+        """Parse Kotlin parameter string - 🔧 ENHANCED: Handle complex types safely."""
         if not params_str or not params_str.strip():
             return []
+        
         params = []
         try:
-            for param in params_str.split(','):
-                param = param.strip()
-                if param and ':' in param:
-                    params.append(param.split(':')[0].strip())
-                elif param:
-                    params.append(param)
-        except Exception:
-            # Return empty if parsing fails
-            pass
-        return params
+            # Handle complex Kotlin parameter syntax: generics, lambdas, etc.
+            param_parts = []
+            bracket_count = 0
+            current_param = ""
+            
+            for char in params_str + ",":  # Add comma to process last param
+                if char == ',' and bracket_count == 0:
+                    if current_param.strip():
+                        param_parts.append(current_param.strip())
+                    current_param = ""
+                else:
+                    if char in '()<>[]{}':
+                        bracket_count += 1 if char in '([{<' else -1
+                    current_param += char
+            
+            for param in param_parts:
+                if ':' in param:
+                    param_name = param.split(':')[0].strip()
+                    if param_name and param_name.isidentifier():
+                        params.append(param_name)
+                elif param.strip() and param.strip().isidentifier():
+                    params.append(param.strip())
+                    
+        except Exception as e:
+            log_to_sublog(self.project_dir, "metadata_extractor.log", 
+                        f"Parameter parsing failed for '{params_str}': {e}")
+            # Return empty instead of crashing
+            return []
+        
+        return params[:10]  # Limit to prevent excessive metadata
 
     def _parse_java_parameters(self, params_str: str) -> List[str]:
-        """Parse Java parameter string - 🔧 FIX: Safe handling."""
+        """Parse Java parameter string - 🔧 ENHANCED: Handle complex types safely."""
         if not params_str or not params_str.strip():
             return []
+        
         params = []
         try:
-            for param in params_str.split(','):
-                param = param.strip()
-                if param and ' ' in param:
-                    params.append(param.split()[-1])  # Get parameter name
-                elif param:
-                    params.append(param)
-        except Exception:
-            # Return empty if parsing fails
-            pass
-        return params
+            # Split on commas, but respect generics and arrays
+            param_parts = []
+            bracket_count = 0
+            current_param = ""
+            
+            for char in params_str + ",":
+                if char == ',' and bracket_count == 0:
+                    if current_param.strip():
+                        param_parts.append(current_param.strip())
+                    current_param = ""
+                else:
+                    if char in '<>[]':
+                        bracket_count += 1 if char in '<[' else -1
+                    current_param += char
+            
+            for param in param_parts:
+                # Extract parameter name from "Type paramName" pattern
+                parts = param.strip().split()
+                if len(parts) >= 2:
+                    param_name = parts[-1]  # Last part is usually the name
+                    if param_name.isidentifier():
+                        params.append(param_name)
+                elif len(parts) == 1 and parts[0].isidentifier():
+                    params.append(parts[0])
+                    
+        except Exception as e:
+            log_to_sublog(self.project_dir, "metadata_extractor.log", 
+                        f"Java parameter parsing failed for '{params_str}': {e}")
+            return []
+        
+        return params[:10]  # Limit to prevent excessive metadata
+
 
     def _extract_js_ts_signatures(self, chunk: str) -> List[Dict[str, str]]:
         """Extract JavaScript/TypeScript function signatures."""
