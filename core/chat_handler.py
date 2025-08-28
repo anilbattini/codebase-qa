@@ -196,15 +196,15 @@ class ChatHandler:
                 log_to_sublog(self.project_dir, "chat_handler.log", 
                             f"Full context: {len(formatted_context)} characters from {len(reranked_docs)} documents")
                 
-                # # Try enhanced context building if available
-                # if hasattr(self, 'context_builder') and self.context_builder:
-                #     try:
-                #         enhanced_context = self.context_builder.build_enhanced_context(reranked_docs, query, intent)
-                #         if enhanced_context and len(enhanced_context) > len(formatted_context):
-                #             formatted_context = enhanced_context
-                #             log_to_sublog(self.project_dir, "chat_handler.log", "Using enhanced context builder")
-                #     except Exception as e:
-                #         log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced context failed: {e}")
+                # Try enhanced context building if available
+                if hasattr(self, 'context_builder') and self.context_builder:
+                    try:
+                        enhanced_context = self.context_builder.build_enhanced_context(reranked_docs, query, intent)
+                        if enhanced_context and len(enhanced_context) > len(formatted_context):
+                            formatted_context = enhanced_context
+                            log_to_sublog(self.project_dir, "chat_handler.log", "Using enhanced context builder")
+                    except Exception as e:
+                        log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced context failed: {e}")
             else:
                 formatted_context = "No relevant documentation found for this query."
 
@@ -235,7 +235,7 @@ class ChatHandler:
                 )
                 
                 result = self.llm.invoke_with_system_user(system_prompt, user_prompt)
-                log_to_sublog(self.project_dir, "preparing_full_context.log", f"Cloud Whole result before stripping: {result}")
+                log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
                 answer = getattr(result, "content", str(result))
             
             else:
@@ -261,7 +261,7 @@ class ChatHandler:
                     "query": query,
                     "rewritten": rewritten,
                 })
-                log_to_sublog(self.project_dir, "prepare_final_context.log", f"Local Whole result before stripping: {result}")
+                log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\n Local Whole result before stripping: {result}")
                 answer = getattr(result, "content", str(result))
 
             st.session_state.thinking_logs.append("✅ Answer generated successfully!")
@@ -290,6 +290,9 @@ class ChatHandler:
             # Try with rewritten query first
             # or lets try the combined query
             combined_query = f'{rewritten} or "{query}"'
+             # Log the actual context being sent
+            log_to_sublog(self.project_dir, "preparing_full_context.log", 
+                        f"\n\nRewritten combined query: {combined_query }")
             retrieved_docs = retriever.invoke(combined_query)
             log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with rewritten query")
             
