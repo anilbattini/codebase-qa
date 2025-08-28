@@ -355,7 +355,7 @@ class UIComponents:
                 if metadata and metadata.get('intent'):
                     expander_title += f" [{metadata['intent'].replace('_', ' ').title()}]"
 
-                with st.expander(expander_title, expanded=(i == 0)):
+                with st.expander(expander_title, expanded=False):
                     st.markdown(f"**A:** {a}")
                     if metadata:
                         col1, col2 = st.columns(2)
