@@ -69,12 +69,16 @@ class CustomLLMClient(Runnable):
         """
         messages = []
         
-        if system_prompt and system_prompt.strip():
-            messages.append({"role": "system", "content": system_prompt.strip()})
-            
-        if user_prompt and user_prompt.strip():
-            messages.append({"role": "user", "content": user_prompt.strip()})
-        
+        if system_prompt:
+            stripped_system = system_prompt.strip()
+            if stripped_system:
+                messages.append({"role": "system", "content": stripped_system})
+
+        if user_prompt:
+            stripped_user = user_prompt.strip()
+            if stripped_user:
+                messages.append({"role": "user", "content": stripped_user})
+
         if not messages:
             raise ValueError("Either system_prompt or user_prompt must be provided")
         
