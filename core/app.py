@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 
 # 1. Initial Setup
 load_dotenv()
+st.cache_data.clear()
+st.cache_resource.clear()
 st.set_page_config(page_title="Codebase-QA", layout="wide")
 
 # Initialize logger with proper path resolution
