@@ -333,7 +333,7 @@ class ChatHandler:
     === Intent ===
     {intent}
 
-    {("=== Impact ===\n" + impact_context) if impact_context else ""}
+    {("=== Impact ===" + impact_context) if impact_context else ""}
 
     Instructions:
     - Use the Context strictly; do not invent facts or generalities.
