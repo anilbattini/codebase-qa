@@ -7,6 +7,7 @@ from rag_manager import RagManager
 from ui_components import UIComponents
 from chat_handler import ChatHandler
 from logger import setup_global_logger, log_highlight
+from logger import move_query_log, rate_and_copy
 from config import ProjectConfig
 from process_manager import ProcessManager
 from dotenv import load_dotenv
@@ -47,6 +48,8 @@ ui.render_build_status()
 if project_dir:
     project_dir = os.path.abspath(project_dir)
     st.session_state["project_dir"] = project_dir
+
+st.session_state.setdefault("rated_logs", set())   # registry
 
 # Add Disable RAG toggle to sidebar
 st.sidebar.markdown("## 🔧 Advanced Options")
@@ -179,7 +182,7 @@ else:
 
 # 4. Chat Interface
 st.title(f"Chat with your `{project_config.project_type}` codebase: {project_config.project_dir_name}")
-ui.render_chat_history()
+ui.render_chat_history(project_dir)
 
 # Setup chat handler and input form
 if rag_manager.is_ready():
@@ -232,9 +235,23 @@ if rag_manager.is_ready():
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
         
+        if debug_mode:
+            moved = move_query_log(query, project_dir, debug_mode)
+            if moved and debug_mode:
+                log_path, liked_dir, disliked_dir = moved
+                if log_path not in st.session_state.rated_logs:        # prevent dups
+                    col1, col2 = st.columns(2)
+                    if col1.button("👍 Like"):
+                        ui._collect_feedback_ui(log_path, liked_dir)
+                    if col2.button("👎 Dislike"):
+                        ui._collect_feedback_ui(log_path, disliked_dir)
+
+            metadata["log_path"] = log_path         # NEW
+            
         # Store in the expected format: (query, answer, source_docs, impact_files, metadata)
         chat_item = (query, answer, reranked_docs, impact_files, metadata)
         st.session_state.chat_history.append(chat_item)
+        
 
 # 5. Optional Debug Section
 if debug_mode:

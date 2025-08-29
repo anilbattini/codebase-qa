@@ -344,7 +344,7 @@ class UIComponents:
             submitted = st.form_submit_button("🚀 Ask")
         return query, submitted
 
-    def render_chat_history(self):
+    def render_chat_history(self, project_dir):
         """Render chat history with expanders and detailed metadata, restored from the original."""
         if st.session_state.get("chat_history"):
             for i, chat_item in enumerate(reversed(st.session_state.chat_history)):
@@ -372,6 +372,20 @@ class UIComponents:
                                 source_line = f"- `{md.get('source', 'Unknown')}` (chunk {md.get('chunk_index', 0)})"
                                 if md.get('name'): source_line += f" *({md.get('name')})*"
                                 st.markdown(source_line)
+                    # Rating buttons inside history (debug only)
+                    debug_mode = st.session_state.get("debug_mode_enabled", False)
+                    log_path = (metadata or {}).get("log_path")
+                    if debug_mode and log_path and log_path not in st.session_state.rated_logs:
+                        col1, col2 = st.columns(2)
+                        if col1.button("👍 Like", key=f"like_{i}"):
+                            self._collect_feedback_ui(log_path,
+                                get_project_log_file(project_dir, "liked"))
+                        if col2.button("👎 Dislike", key=f"dis_{i}"):
+                            self._collect_feedback_ui(log_path,
+                                get_project_log_file(project_dir, "disliked"))
+                    elif debug_mode and log_path:
+                        st.caption("✅ feedback recorded")
+
 
     def render_debug_section(self, project_config, ollama_model, ollama_endpoint, project_dir):
         """Render comprehensive debug tools and inspection section."""
