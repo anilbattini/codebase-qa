@@ -5,6 +5,7 @@ import os
 from langchain.prompts import PromptTemplate
 from build_rag import update_logs, get_impact
 from context_builder import ContextBuilder
+from prompt_router import PromptRouter
 from query_intent_classifier import QueryIntentClassifier
 from logger import log_highlight, log_to_sublog
 
@@ -213,56 +214,82 @@ class ChatHandler:
             st.session_state.thinking_logs.append("🤖 Generating answer...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Generating final answer...")
+            
+            router = PromptRouter()
+
+            context = router.build_enhanced_context(
+                reranked_docs=reranked_docs,
+                query=query,
+                intent=intent,
+                context_builder=self.context_builder,
+                create_full_context=self._create_full_context,
+            )
+
+            sys_prompt, user_prompt = router.build_enhanced_query(
+                query=query,
+                rewritten=rewritten,
+                intent=intent,
+                context=context,
+                provider=self.provider,
+                llm=self.llm,
+            )
+
+            if user_prompt:  # cloud path
+                result = self.llm.invoke_with_system_user(sys_prompt, user_prompt)
+            else:            # local path
+                result = self.llm.invoke(sys_prompt)  # single prompt
+            log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
+            answer = getattr(result, "content", str(result))
 
             
-            if self.provider == 'cloud' and hasattr(self.llm, 'invoke_with_system_user'):
-                # 🎯 CLOUD: Direct system/user separation with crystal clear task definition
-                system_prompt = (
-                    "You are a senior codebase analyst. Your task is to answer questions about software projects using only the provided code context.\n\n"
-                    "IMPORTANT RULES:\n"
-                    "- Answer the user's question directly and specifically\n"
-                    "- Use ONLY the code context provided - do not invent or assume information\n" 
-                    "- Cite specific files or code snippets when explaining\n"
-                    "- If insufficient context is provided, state this clearly\n"
-                    "- Focus on answering the actual question, not analyzing the prompt structure\n"
-                    "- Be concise and practical in your response"
-                )
+            # if self.provider == 'cloud' and hasattr(self.llm, 'invoke_with_system_user'):
+            #     # 🎯 CLOUD: Direct system/user separation with crystal clear task definition
+            #     system_prompt = (
+            #         "You are a senior codebase analyst. Your task is to answer questions about software projects using only the provided code context.\n\n"
+            #         "IMPORTANT RULES:\n"
+            #         "- Answer the user's question directly and specifically\n"
+            #         "- Use ONLY the code context provided - do not invent or assume information\n" 
+            #         "- Cite specific files or code snippets when explaining\n"
+            #         "- If insufficient context is provided, state this clearly\n"
+            #         "- Focus on answering the actual question, not analyzing the prompt structure\n"
+            #         "- Be concise and practical in your response"
+            #     )
                 
-                user_prompt = (
-                    f"ReWritten query: {rewritten}\n\n"
-                    f"CONTEXT TO USE:\n{formatted_context}\n\n"
-                    f"Based on the code context above, please answer the question: {query}"
-                )
+            #     user_prompt = (
+            #         f"ReWritten query: {rewritten}\n\n"
+            #         f"CONTEXT TO USE:\n{formatted_context}\n\n"
+            #         f"Based on the code context above, please answer the question: {query}"
+            #     )
                 
-                result = self.llm.invoke_with_system_user(system_prompt, user_prompt)
-                log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
-                answer = getattr(result, "content", str(result))
+            #     result = self.llm.invoke_with_system_user(system_prompt, user_prompt)
+            #     log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
+            #     answer = getattr(result, "content", str(result))
             
-            else:
-                # 🎯 OLLAMA + CLOUD FALLBACK: Clearer single prompt structure
-                final_prompt = PromptTemplate(
-                    input_variables=["context", "query", "rewritten"],
-                    template=(
-                        "You are a senior codebase analyst answering questions about software projects.\n\n"
-                        "QUESTION: {query}\n\n"
-                        "ReWritten query: {rewritten}\n\n"
-                        "CODE CONTEXT:\n{context}\n\n"
-                        "INSTRUCTIONS:\n"
-                        "- Answer the question directly using the code context provided\n"
-                        "- Cite specific files or code when explaining\n"
-                        "- If context is insufficient, say so clearly\n"
-                        "- Be practical and concise\n\n"
-                    ),
-                )
+            # else:
+            #     # 🎯 OLLAMA + CLOUD FALLBACK: Clearer single prompt structure
+            #     final_prompt = PromptTemplate(
+            #         input_variables=["context", "query", "rewritten"],
+            #         template=(
+            #             "You are a senior codebase analyst answering questions about software projects.\n\n"
+            #             "QUESTION: {query}\n\n"
+            #             "ReWritten query: {rewritten}\n\n"
+            #             "CODE CONTEXT:\n{context}\n\n"
+            #             "INSTRUCTIONS:\n"
+            #             "- Answer the question directly using the code context provided\n"
+            #             "- Cite specific files or code when explaining\n"
+            #             "- If context is insufficient, say so clearly\n"
+            #             "- Be practical and concise\n\n"
+            #         ),
+            #     )
                 
-                final_chain = final_prompt | self.llm
-                result = final_chain.invoke({
-                    "context": formatted_context,
-                    "query": query,
-                    "rewritten": rewritten,
-                })
-                log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\n Local Whole result before stripping: {result}")
-                answer = getattr(result, "content", str(result))
+            #     final_chain = final_prompt | self.llm
+            #     result = final_chain.invoke({
+            #         "context": formatted_context,
+            #         "query": query,
+            #         "rewritten": rewritten,
+            #     })
+            #     log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\n Local Whole result before stripping: {result}")
+            #     answer = getattr(result, "content", str(result))
 
             st.session_state.thinking_logs.append("✅ Answer generated successfully!")
             update_logs(log_placeholder)
