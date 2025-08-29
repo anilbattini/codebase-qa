@@ -217,6 +217,7 @@ class ChatHandler:
             
             router = PromptRouter()
 
+            # assume `detail_level` comes from a UI dropdown (default 'moderate')
             context = router.build_enhanced_context(
                 reranked_docs=reranked_docs,
                 query=query,
@@ -225,19 +226,24 @@ class ChatHandler:
                 create_full_context=self._create_full_context,
             )
 
-            sys_prompt, user_prompt = router.build_enhanced_query(
+            detail_level = st.session_state.get("detail_level", "moderate")
+            sys_or_single, user_part = router.build_enhanced_query(
                 query=query,
                 rewritten=rewritten,
                 intent=intent,
                 context=context,
+                # detail_level="moderate",          # <-- NEW
+                # detail_level="elaborate",          # <-- NEW
+                detail_level=detail_level,          # <-- NEW
                 provider=self.provider,
                 llm=self.llm,
             )
 
-            if user_prompt:  # cloud path
-                result = self.llm.invoke_with_system_user(sys_prompt, user_prompt)
-            else:            # local path
-                result = self.llm.invoke(sys_prompt)  # single prompt
+            if user_part:          # cloud
+                result = self.llm.invoke_with_system_user(sys_or_single, user_part)
+            else:                  # local
+                result = self.llm.invoke(sys_or_single)
+
             log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
             answer = getattr(result, "content", str(result))
 

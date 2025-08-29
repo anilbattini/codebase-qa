@@ -1,16 +1,13 @@
-# prompt_router.py  (v2)
+# prompt_router.py  (v3 – adds detail_level)
 
 from typing import Tuple
-from logger import log_to_sublog   # keep your existing logger
+from logger import log_to_sublog
+
 
 class PromptRouter:
-    """
-    1. build_enhanced_query → returns the right prompt(s) for cloud or local.
-    2. build_enhanced_context → always delivers the richest context available.
-    """
-
-    # ------------ PUBLIC  -------------------------------------------------
-
+    # ------------------------------------------------------------------ #
+    # PUBLIC API
+    # ------------------------------------------------------------------ #
     def build_enhanced_query(
         self,
         *,
@@ -18,28 +15,32 @@ class PromptRouter:
         rewritten: str,
         intent: str,
         context: str,
+        detail_level: str,          #  <-- NEW  ('simple' | 'moderate' | 'elaborate')
         provider: str,
         llm,
     ) -> Tuple[str, str]:
         """
-        • CLOUD  → (system_prompt, user_prompt)  (use llm.invoke_with_system_user)
-        • LOCAL  → (single_prompt, '')          (pass to llm as one string)
-
-        The local single_prompt is just:  system_prompt + "\n\n" + user_prompt
+        CLOUD  → returns (system_prompt, user_prompt)
+        LOCAL  → returns (single_prompt, '')
         """
-        system_prompt, user_prompt_tmpl = self._cloud_templates.get(
+        detail_level = detail_level.lower().strip() or "moderate"
+        if detail_level not in self._detail_directives:
+            detail_level = "moderate"
+
+        # ---------- 1. pick base intent template ---------
+        system_prompt, user_body = self._cloud_templates.get(
             intent, self._cloud_templates["general"]
         )
 
-        user_prompt = user_prompt_tmpl.format(
-            query=query, rewritten=rewritten, context=context
-        )
+        # ---------- 2. append the detail directive ---------
+        detail_directive = self._detail_directives[detail_level]
+        user_prompt = f"{user_body.format(query=query, rewritten=rewritten, context=context)}\n\n{detail_directive}"
 
+        # ---------- 3. return cloud  vs. local  ----------
         if provider == "cloud" and hasattr(llm, "invoke_with_system_user"):
-            return system_prompt, user_prompt  # → two-part message
-        # ---- LOCAL / OLLAMA ----
-        single_prompt = f"{system_prompt}\n\n{user_prompt}"
-        return single_prompt, ""               # second value unused
+            return system_prompt, user_prompt            # two-part
+        single_prompt = f"{system_prompt}\n\n{user_prompt}"  # local
+        return single_prompt, ""
 
     def build_enhanced_context(
         self,
@@ -50,13 +51,8 @@ class PromptRouter:
         context_builder,
         create_full_context,
     ) -> str:
-        """
-        1. Start with the vanilla full-content context.
-        2. If the advanced builder succeeds *and* is longer ⇒ use it.
-        """
         base_ctx = create_full_context(reranked_docs)
-
-        if context_builder is None:
+        if not context_builder:
             return base_ctx
 
         try:
@@ -71,8 +67,9 @@ class PromptRouter:
 
         return base_ctx
 
-    # ------------ INTENT-SPECIFIC TEMPLATES -------------------------------
-
+    # ------------------------------------------------------------------ #
+    # TEMPLATE LIBRARY  (unchanged base text)
+    # ------------------------------------------------------------------ #
     _cloud_templates = {
         "overview": (
             "You are a senior codebase analyst. Answer using ONLY the code context.",
@@ -97,7 +94,7 @@ CONTEXT:
 
 TASK:
 State the exact validation rules for the field/screen in question.
-Cite file names or functions where they appear. Do not speculate."""
+Cite file names or functions. Do not speculate."""
         ),
         "ui_flow": (
             "You are a senior Android navigation expert.",
@@ -107,8 +104,8 @@ CONTEXT:
 {context}
 
 TASK:
-Describe the screen-to-screen navigation flow:
-• Source and destination
+Describe the navigation flow:
+• Source and destination screens
 • Key intents / fragments / routes
 Keep it sequential and specific."""
         ),
@@ -120,10 +117,9 @@ CONTEXT:
 {context}
 
 TASK:
-Explain the business rule or calculation being asked about.
+Explain the business rule or calculation requested.
 Show the functions or classes that implement it."""
         ),
-        # fallback
         "general": (
             "You are a senior codebase analyst.",
             """Rewritten query: {rewritten}
@@ -133,5 +129,24 @@ CONTEXT:
 
 TASK:
 Answer the question directly and cite files/functions where relevant."""
+        ),
+    }
+
+    # ------------------------------------------------------------------ #
+    # DETAIL-LEVEL DIRECTIVES  (NEW)
+    # ------------------------------------------------------------------ #
+    _detail_directives = {
+        "simple": (
+            "RESPONSE STYLE: Provide a concise 1-3 sentence answer only. "
+            "No bullet lists, no additional explanations."
+        ),
+        "moderate": (
+            "RESPONSE STYLE: Provide a direct answer with essential context. "
+            "Limit to ~200 words; bullet lists allowed; avoid fluff."
+        ),
+        "elaborate": (
+            "RESPONSE STYLE: Provide an in-depth, step-by-step explanation. "
+            "Include code excerpts or file names where helpful; use lists or "
+            "sub-sections for clarity; no hard length limit."
         ),
     }
