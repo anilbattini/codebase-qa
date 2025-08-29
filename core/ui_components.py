@@ -5,12 +5,49 @@ import os
 import shutil
 from config import ProjectConfig
 from model_config import model_config
-from logger import log_highlight, log_to_sublog
+from logger import get_project_log_file, log_highlight, log_to_sublog, rate_and_copy
+from logger import get_project_log_file
+
 from process_manager import ProcessManager
 
 class UIComponents:
     """Handles all UI rendering components for the RAG app, restored from the original version."""
-
+    
+    def _collect_feedback_ui(self, log_path: str, target_dir: str):
+        """
+        Mini-form shown in a pop-over: 1-10 slider + remark box.
+        Appends feedback to log then copies to liked/ or disliked/.
+        """
+        import streamlit as st
+        with st.popover("Provide feedback ✍️"):            # Streamlit ≥1.29
+            score  = st.slider("Score (1 = bad, 10 = great)", 1, 10, 8,
+                            key=f"s_{log_path}")
+            remark = st.text_area("Remarks", height=80,
+                                key=f"r_{log_path}")
+            if st.button("Submit", key=f"sb_{log_path}"):
+                if rate_and_copy(log_path, target_dir, score, remark):
+                    st.success("Saved ✓")
+                    st.session_state.rated_logs.add(log_path)
+                else:
+                    st.error("Failed to save feedback.")
+    
+    # Render "Answer Detail Level"
+    def render_debug_controls(self, debug_mode: bool) -> str:
+        """
+        Shows 'Answer Detail Level' dropdown (simple | moderate | elaborate)
+        – visible only when debug_mode is True.
+        Returns the selected level (defaults to 'moderate').
+        """
+        if not debug_mode:
+            return "moderate"
+        with st.sidebar:
+            st.markdown("### 📝 Answer Verbosity")
+            return st.selectbox(
+                "Detail level",
+                options=["simple", "moderate", "elaborate"],
+                index=1,                      # default == moderate
+                help="Controls how verbose the assistant replies"
+        )
 
     def render_sidebar_config(self):
         """Render the sidebar configuration with locked Ollama fields when provider is Ollama."""
@@ -71,6 +108,9 @@ class UIComponents:
             force_rebuild = ProcessManager.safe_force_rebuild_check()
             debug_mode = st.session_state.get("debug_mode_enabled", False) and ProcessManager.safe_debug_mode_check()
             
+            detail_level = self.render_debug_controls(debug_mode)
+            st.session_state["detail_level"] = detail_level      # persist
+
             return (project_dir, model_config.get_ollama_model(), 
                 model_config.get_ollama_endpoint(), force_rebuild, debug_mode, True)
 

@@ -1,10 +1,11 @@
 # logger.py
 
+from datetime import datetime
 import os
 import logging
 import sys
 import inspect
-from datetime import datetime
+import shutil, os, re
 
 def setup_global_logger(log_dir="logs"):
     """Configure a global logger with file and stdout output, with file rotation per session."""
@@ -115,12 +116,69 @@ def log_highlight(msg, logger=None):
         logger.info(highlight_msg)
     else:
         log_to_sublog(None, "highlight.log", msg)
+        
+# logger.py  ── FEEDBACK HELPERS ─────────────────────────────────────────
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# ADDED
-# - get_project_log_file (lines 28-32): always write sublogs to per-project log folder, bug-free.
-# - log_to_sublog (lines 34-38): simple DRY-style log append for any event/context/block throughout project.
-# - log_highlight (lines 40-49): standard highlight log to mark major processing, usable anywhere.
-# - All logging helpers now live here (import everywhere else).
-# REMOVED
-# - N/A (brand new logging centralization module).
+
+def move_query_log(query: str, project_dir: str, debug_mode: bool):
+    """
+    Move preparing_full_context.log  ➜  logs/queries/<TS>_<first7>.log
+    Returns (new_path, liked_dir, disliked_dir) or None.
+    """
+    if not debug_mode:
+        return None
+
+    base_logs   = get_project_log_file(project_dir, "")      # …/logs/
+    src_log     = get_project_log_file(project_dir, "preparing_full_context.log")
+    if not os.path.exists(src_log):
+        return None
+
+    for sub in ("queries", "liked", "disliked"):
+        os.makedirs(os.path.join(base_logs, sub), exist_ok=True)
+
+    slug = "_".join(re.findall(r"\w+", query)[:7]) or "query"
+    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dst  = os.path.join(base_logs, "queries", f"{ts}_{slug}.log")
+
+    try:  shutil.move(src_log, dst)
+    except Exception as e:
+        log_highlight(f"move_query_log warning: {e}")
+        return None
+
+    return dst, os.path.join(base_logs, "liked"), os.path.join(base_logs, "disliked")
+
+
+def rate_and_copy(log_path: str, target_dir: str,
+                  score: int, remark: str):
+    """
+    • Append rating block to the source log (score + remark)
+    • Copy to target_dir (liked/ or disliked/) without duplicates
+    """
+    if not (log_path and os.path.exists(log_path)):
+        return False
+
+    # 1. append feedback
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("\n--- USER FEEDBACK --------------------------------\n")
+            f.write(f"RATING : {score}/10\n")
+            f.write(f"COMMENT: {remark or '(no comment)'}\n")
+    except Exception as e:
+        log_highlight(f"rate_and_copy append warning: {e}")
+        return False
+
+    # 2. copy (dedupe)
+    os.makedirs(target_dir, exist_ok=True)
+    base, ext = os.path.splitext(os.path.basename(log_path))
+    candidate = os.path.join(target_dir, base + ext)
+    idx = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(target_dir, f"{base}_{idx}{ext}")
+        idx += 1
+    try:
+        shutil.copy(log_path, candidate)
+        return True
+    except Exception as e:
+        log_highlight(f"rate_and_copy copy warning: {e}")
+        return False
+# ────────────────────────────────────────────────────────────────────────
