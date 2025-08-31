@@ -42,31 +42,6 @@ class PromptRouter:
         single_prompt = f"{system_prompt}\n\n{user_prompt}"  # local
         return single_prompt, ""
 
-    def build_enhanced_context(
-        self,
-        *,
-        reranked_docs,
-        query: str,
-        intent: str,
-        context_builder,
-        create_full_context,
-    ) -> str:
-        base_ctx = create_full_context(reranked_docs)
-        if not context_builder:
-            return base_ctx
-
-        try:
-            advanced_ctx = context_builder.build_enhanced_context(
-                reranked_docs, query, intent
-            )
-            if advanced_ctx and len(advanced_ctx) > len(base_ctx):
-                log_to_sublog(".", "prompt_router.log", "Using advanced context")
-                return advanced_ctx
-        except Exception as e:
-            log_to_sublog(".", "prompt_router.log", f"Context builder error: {e}")
-
-        return base_ctx
-
     # ------------------------------------------------------------------ #
     # TEMPLATE LIBRARY  (unchanged base text)
     # ------------------------------------------------------------------ #

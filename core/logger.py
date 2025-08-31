@@ -12,8 +12,7 @@ def setup_global_logger(log_dir="logs"):
     # Ensure log_dir is an absolute path
     log_dir = os.path.abspath(log_dir)
     os.makedirs(log_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = os.path.join(log_dir, f"rag_session_{timestamp}.log")
+    log_filename = os.path.join(log_dir, f"rag_session.log")
 
     logger = logging.getLogger("RAG")
     logger.setLevel(logging.DEBUG)  # always log at DEBUG level for file
@@ -148,37 +147,102 @@ def move_query_log(query: str, project_dir: str, debug_mode: bool):
     return dst, os.path.join(base_logs, "liked"), os.path.join(base_logs, "disliked")
 
 
-def rate_and_copy(log_path: str, target_dir: str,
-                  score: int, remark: str):
+# In logger.py - UPDATED with comprehensive path debugging
+def rate_and_copy(log_path: str, target_dir: str, score: int, remark: str):
     """
-    • Append rating block to the source log (score + remark)
-    • Copy to target_dir (liked/ or disliked/) without duplicates
+    Enhanced version with detailed debugging for path issues.
     """
-    if not (log_path and os.path.exists(log_path)):
+    debug_info = []
+    debug_info.append(f"rate_and_copy called with:")
+    debug_info.append(f"  log_path: {log_path}")
+    debug_info.append(f"  target_dir: {target_dir}")
+    debug_info.append(f"  score: {score}")
+    debug_info.append(f"  remark length: {len(remark) if remark else 0}")
+    
+    # Validate inputs
+    if not log_path:
+        debug_info.append("ERROR: log_path is empty")
+        log_highlight("\n".join(debug_info))
         return False
-
-    # 1. append feedback
+    
+    if not os.path.exists(log_path):
+        debug_info.append(f"ERROR: log_path does not exist: {log_path}")
+        log_highlight("\n".join(debug_info))
+        return False
+    
+    if not target_dir:
+        debug_info.append("ERROR: target_dir is empty")
+        log_highlight("\n".join(debug_info))
+        return False
+    
+    # 1. Append feedback
     try:
         with open(log_path, "a", encoding="utf-8") as f:
             f.write("\n--- USER FEEDBACK --------------------------------\n")
             f.write(f"RATING : {score}/10\n")
             f.write(f"COMMENT: {remark or '(no comment)'}\n")
+        debug_info.append("SUCCESS: Feedback appended to log")
     except Exception as e:
-        log_highlight(f"rate_and_copy append warning: {e}")
+        debug_info.append(f"ERROR: Failed to append feedback: {e}")
+        log_highlight("\n".join(debug_info))
         return False
-
-    # 2. copy (dedupe)
-    os.makedirs(target_dir, exist_ok=True)
-    base, ext = os.path.splitext(os.path.basename(log_path))
-    candidate = os.path.join(target_dir, base + ext)
-    idx = 1
-    while os.path.exists(candidate):
-        candidate = os.path.join(target_dir, f"{base}_{idx}{ext}")
-        idx += 1
+    
+    # 2. Create target directory with detailed path resolution
     try:
-        shutil.copy(log_path, candidate)
-        return True
+        abs_target_dir = os.path.abspath(target_dir)
+        debug_info.append(f"Absolute target dir: {abs_target_dir}")
+        
+        os.makedirs(abs_target_dir, exist_ok=True)
+        debug_info.append(f"SUCCESS: Target directory created/verified")
+        
+        # Verify directory is writable
+        test_file = os.path.join(abs_target_dir, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        debug_info.append("SUCCESS: Target directory is writable")
+        
     except Exception as e:
-        log_highlight(f"rate_and_copy copy warning: {e}")
+        debug_info.append(f"ERROR: Target directory issue: {e}")
+        log_highlight("\n".join(debug_info))
         return False
-# ────────────────────────────────────────────────────────────────────────
+    
+    # 3. Copy with deduplication
+    try:
+        base, ext = os.path.splitext(os.path.basename(log_path))
+        candidate = os.path.join(abs_target_dir, base + ext)
+        original_candidate = candidate
+        
+        idx = 1
+        while os.path.exists(candidate):
+            candidate = os.path.join(abs_target_dir, f"{base}_{idx}{ext}")
+            idx += 1
+        
+        debug_info.append(f"Copy destination: {candidate}")
+        
+        import shutil
+        shutil.copy(log_path, candidate)
+        
+        # Verify copy succeeded
+        if os.path.exists(candidate):
+            copied_size = os.path.getsize(candidate)
+            original_size = os.path.getsize(log_path)
+            debug_info.append(f"SUCCESS: File copied ({original_size} -> {copied_size} bytes)")
+            
+            if copied_size != original_size:
+                debug_info.append("WARNING: File sizes don't match")
+            
+        else:
+            debug_info.append("ERROR: Copy succeeded but file not found at destination")
+            log_highlight("\n".join(debug_info))
+            return False
+            
+    except Exception as e:
+        debug_info.append(f"ERROR: Copy failed: {e}")
+        log_highlight("\n".join(debug_info))
+        return False
+    
+    # Log all debug info
+    log_highlight("\n".join(debug_info))
+    return True
+

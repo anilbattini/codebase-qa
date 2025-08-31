@@ -13,23 +13,64 @@ from process_manager import ProcessManager
 class UIComponents:
     """Handles all UI rendering components for the RAG app, restored from the original version."""
     
+    # In ui_components.py - UPDATED with concurrency safety
     def _collect_feedback_ui(self, log_path: str, target_dir: str):
         """
-        Mini-form shown in a pop-over: 1-10 slider + remark box.
-        Appends feedback to log then copies to liked/ or disliked/.
+        Safe feedback collection that doesn't disrupt ongoing operations.
         """
-        import streamlit as st
-        with st.popover("Provide feedback ✍️"):            # Streamlit ≥1.29
-            score  = st.slider("Score (1 = bad, 10 = great)", 1, 10, 8,
-                            key=f"s_{log_path}")
-            remark = st.text_area("Remarks", height=80,
-                                key=f"r_{log_path}")
-            if st.button("Submit", key=f"sb_{log_path}"):
-                if rate_and_copy(log_path, target_dir, score, remark):
-                    st.success("Saved ✓")
-                    st.session_state.rated_logs.add(log_path)
-                else:
-                    st.error("Failed to save feedback.")
+        feedback_key = f"feedback_state_{log_path}"
+        
+        # Initialize feedback state if not exists
+        if feedback_key not in st.session_state:
+            st.session_state[feedback_key] = {
+                'show_dialog': False,
+                'submitted': False,
+                'score': 8,
+                'remark': ''
+            }
+        
+        feedback_state = st.session_state[feedback_key]
+        
+        if feedback_state['show_dialog'] and not feedback_state['submitted']:
+            with st.container():
+                st.markdown("### 📝 Provide Feedback")
+                
+                # Use the stored values to maintain state
+                score = st.slider(
+                    "Score (1 = bad, 10 = great)", 
+                    1, 10, feedback_state.get('score', 8),
+                    key=f"score_slider_{log_path}"
+                )
+                
+                remark = st.text_area(
+                    "Remarks", 
+                    value=feedback_state.get('remark', ""),
+                    height=80,
+                    key=f"remark_area_{log_path}"
+                )
+                
+                # Update state without triggering rerun
+                st.session_state[feedback_key]['score'] = score
+                st.session_state[feedback_key]['remark'] = remark
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("✅ Submit", key=f"submit_btn_{log_path}"):
+                        if rate_and_copy(log_path, target_dir, score, remark):
+                            st.session_state.rated_logs.add(log_path)
+                            st.session_state[feedback_key]['submitted'] = True
+                            st.session_state[feedback_key]['show_dialog'] = False
+                            st.success("✅ Feedback saved!")
+                            # NO st.rerun() here - let natural refresh handle it
+                        else:
+                            st.error("❌ Failed to save feedback.")
+                
+                with col2:
+                    if st.button("❌ Cancel", key=f"cancel_btn_{log_path}"):
+                        st.session_state[feedback_key]['show_dialog'] = False
+                        # NO st.rerun() here
+
     
     # Render "Answer Detail Level"
     def render_debug_controls(self, debug_mode: bool) -> str:
@@ -384,13 +425,13 @@ class UIComponents:
             submitted = st.form_submit_button("🚀 Ask")
         return query, submitted
 
+    # Updated render_chat_history method - SAFE button handling
     def render_chat_history(self, project_dir):
-        """Render chat history with expanders and detailed metadata, restored from the original."""
+        """Render chat history with non-disruptive feedback buttons."""
         if st.session_state.get("chat_history"):
             for i, chat_item in enumerate(reversed(st.session_state.chat_history)):
-                # Handle both old (4 items) and new (5 items) formats for backward compatibility
                 q, a, srcs, impact_files, metadata = (*chat_item, None)[:5]
-
+                
                 expander_title = f"Q: {q}"
                 if metadata and metadata.get('intent'):
                     expander_title += f" [{metadata['intent'].replace('_', ' ').title()}]"
@@ -413,18 +454,38 @@ class UIComponents:
                                 if md.get('name'): source_line += f" *({md.get('name')})*"
                                 st.markdown(source_line)
                     # Rating buttons inside history (debug only)
+                    # UPDATED: Safe feedback buttons
                     debug_mode = st.session_state.get("debug_mode_enabled", False)
                     log_path = (metadata or {}).get("log_path")
+                    
                     if debug_mode and log_path and log_path not in st.session_state.rated_logs:
+                        feedback_key = f"feedback_state_{log_path}"
+                        
+                        # Initialize if needed
+                        if feedback_key not in st.session_state:
+                            st.session_state[feedback_key] = {'show_dialog': False, 'submitted': False}
+                        
                         col1, col2 = st.columns(2)
-                        if col1.button("👍 Like", key=f"like_{i}"):
-                            self._collect_feedback_ui(log_path,
-                                get_project_log_file(project_dir, "liked"))
-                        if col2.button("👎 Dislike", key=f"dis_{i}"):
-                            self._collect_feedback_ui(log_path,
-                                get_project_log_file(project_dir, "disliked"))
-                    elif debug_mode and log_path:
-                        st.caption("✅ feedback recorded")
+                        
+                        with col1:
+                            if st.button("👍 Like", key=f"like_btn_{i}"):
+                                st.session_state[feedback_key]['show_dialog'] = True
+                                st.session_state[f"target_dir_{log_path}"] = get_project_log_file(project_dir, "liked")
+                                # NO st.rerun() - let component refresh naturally
+                        
+                        with col2:
+                            if st.button("👎 Dislike", key=f"dislike_btn_{i}"):
+                                st.session_state[feedback_key]['show_dialog'] = True
+                                st.session_state[f"target_dir_{log_path}"] = get_project_log_file(project_dir, "disliked")
+                                # NO st.rerun() - let component refresh naturally
+                        
+                        # Show feedback dialog if requested
+                        target_dir = st.session_state.get(f"target_dir_{log_path}")
+                        if st.session_state[feedback_key]['show_dialog'] and target_dir:
+                            self._collect_feedback_ui(log_path, target_dir)
+                    
+                    elif debug_mode and log_path and log_path in st.session_state.rated_logs:
+                        st.caption("✅ Feedback recorded")
 
 
     def render_debug_section(self, project_config, ollama_model, ollama_endpoint, project_dir):
