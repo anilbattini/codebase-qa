@@ -21,24 +21,8 @@ class ChatHandler:
         self.llm = llm
         self.project_config = project_config
         self.provider = provider
-        
-        # # 🔧 FIX: Validate LLM connectivity
-        # try:
-        #     test_response = self.llm.invoke("Test connection")
-        #     log_to_sublog(project_dir, "chat_handler.log", f"Main LLM test: {type(test_response)}")
-        # except Exception as e:
-        #     log_to_sublog(project_dir, "chat_handler.log", f"Main LLM connection failed: {e}")
-        #     raise ValueError(f"Main LLM not responsive: {e}")
-        
-        # Always use local Ollama for rewriting
+
         self.rewrite_llm = rewrite_llm if rewrite_llm is not None else llm
-        
-        # 🔧 FIX: Test rewrite LLM
-        # try:
-        #     test_rewrite = self.rewrite_llm.invoke("Test rewrite")
-        #     log_to_sublog(project_dir, "chat_handler.log", f"Rewrite LLM test: {type(test_rewrite)}")
-        # except Exception as e:
-        #     log_to_sublog(project_dir, "chat_handler.log", f"Rewrite LLM connection failed: {e}")
             
         self.rewrite_chain = self._create_rewrite_chain()
         
@@ -59,7 +43,6 @@ class ChatHandler:
                 "IMPORTANT: For questions about 'what does this project do', 'project overview', or 'main purpose', "
                 "include terms like: main activity, MainActivity, application, app purpose, project structure, "
                 "manifest, build.gradle, README, documentation.\n\n"
-                "Search Query:"
             ),
         )
         return prompt | self.rewrite_llm
@@ -77,14 +60,18 @@ class ChatHandler:
         total_chars = 0
         max_total_context = 8000  # Reasonable limit for LLM context window
         
+        # Log the actual context being sent
+        log_to_sublog(self.project_dir, "preparing_full_context.log", 
+                        f"\n\nLooping through retrieved docs and logging context and metadata.")
+            
         for i, doc in enumerate(docs, 1):
             # Extract full content safely
             content = getattr(doc, 'page_content', '') or str(doc)
             metadata = getattr(doc, 'metadata', {})
             
-             # Log the actual context being sent
+            # Log the actual context being sent
             log_to_sublog(self.project_dir, "preparing_full_context.log", 
-                        f"\n\nContent:\n {content} \n\nMetadata:\n {metadata}")
+                        f"\n\nIteration{i}: Content:\n {content} \n\nMetadata:\n {metadata}")
             
             # Get source information
             source = metadata.get('source', 'unknown')
@@ -134,6 +121,8 @@ class ChatHandler:
         st.session_state.thinking_logs.append("🧠 Starting enhanced query processing...")
         update_logs(log_placeholder)
         log_to_sublog(self.project_dir, "chat_handler.log", f"Starting query processing: {query}")
+        log_to_sublog(self.project_dir, "preparing_full_context.log", 
+                        f"Starting query processing: {query}")
 
         try:
             # Phase 1: Intent
@@ -141,6 +130,7 @@ class ChatHandler:
             st.session_state.thinking_logs.append(f"🎯 Detected intent: {intent} (confidence: {confidence:.2f})")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
+            log_to_sublog(self.project_dir, "preparing_full_context.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
             if debug_mode:
                 st.info(f"🎯 **Query Intent**: {intent} (confidence: {confidence:.2f})")
 
@@ -157,16 +147,19 @@ class ChatHandler:
             # Phase 2: Rewriting (local Ollama)
             rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
             log_to_sublog(self.project_dir, "chat_handler.log", f"Query rewritten: '{query}' -> '{rewritten}'")
+            log_to_sublog(self.project_dir, "preparing_full_context.log", f"Query rewritten: '{query}' -> '{rewritten}'")
 
             # Phase 3: Impact analysis
             impact_files, impact_context = self._analyze_impact_with_intent(query, intent, log_placeholder)
             if impact_files:
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Impact analysis: {len(impact_files)} files affected")
+                log_to_sublog(self.project_dir, "preparing_full_context.log", f"Impact analysis: {len(impact_files)} files affected")
 
             # Phase 4: Retrieval (existing retriever)
             st.session_state.thinking_logs.append("📖 Performing intelligent document retrieval...")
             update_logs(log_placeholder)
             log_to_sublog(self.project_dir, "chat_handler.log", "Starting document retrieval...")
+            log_to_sublog(self.project_dir, "preparing_full_context.log", "Starting document retrieval...")
 
             retriever = st.session_state.get("retriever")
             if not retriever:
@@ -187,6 +180,7 @@ class ChatHandler:
             if source_documents:
                 reranked_docs = self._rerank_docs_by_intent(source_documents, query, intent)
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
+                log_to_sublog(self.project_dir, "preparing_full_context.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
 
             
             if reranked_docs:
@@ -218,20 +212,13 @@ class ChatHandler:
             router = PromptRouter()
 
             # assume `detail_level` comes from a UI dropdown (default 'moderate')
-            context = router.build_enhanced_context(
-                reranked_docs=reranked_docs,
-                query=query,
-                intent=intent,
-                context_builder=self.context_builder,
-                create_full_context=self._create_full_context,
-            )
 
             detail_level = st.session_state.get("detail_level", "moderate")
             sys_or_single, user_part = router.build_enhanced_query(
                 query=query,
                 rewritten=rewritten,
                 intent=intent,
-                context=context,
+                context=formatted_context,
                 # detail_level="moderate",          # <-- NEW
                 # detail_level="elaborate",          # <-- NEW
                 detail_level=detail_level,          # <-- NEW
@@ -244,58 +231,8 @@ class ChatHandler:
             else:                  # local
                 result = self.llm.invoke(sys_or_single)
 
-            log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
+            log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nTotal response from {self.provider}LLM: {result}")
             answer = getattr(result, "content", str(result))
-
-            
-            # if self.provider == 'cloud' and hasattr(self.llm, 'invoke_with_system_user'):
-            #     # 🎯 CLOUD: Direct system/user separation with crystal clear task definition
-            #     system_prompt = (
-            #         "You are a senior codebase analyst. Your task is to answer questions about software projects using only the provided code context.\n\n"
-            #         "IMPORTANT RULES:\n"
-            #         "- Answer the user's question directly and specifically\n"
-            #         "- Use ONLY the code context provided - do not invent or assume information\n" 
-            #         "- Cite specific files or code snippets when explaining\n"
-            #         "- If insufficient context is provided, state this clearly\n"
-            #         "- Focus on answering the actual question, not analyzing the prompt structure\n"
-            #         "- Be concise and practical in your response"
-            #     )
-                
-            #     user_prompt = (
-            #         f"ReWritten query: {rewritten}\n\n"
-            #         f"CONTEXT TO USE:\n{formatted_context}\n\n"
-            #         f"Based on the code context above, please answer the question: {query}"
-            #     )
-                
-            #     result = self.llm.invoke_with_system_user(system_prompt, user_prompt)
-            #     log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nCloud Whole result before stripping: {result}")
-            #     answer = getattr(result, "content", str(result))
-            
-            # else:
-            #     # 🎯 OLLAMA + CLOUD FALLBACK: Clearer single prompt structure
-            #     final_prompt = PromptTemplate(
-            #         input_variables=["context", "query", "rewritten"],
-            #         template=(
-            #             "You are a senior codebase analyst answering questions about software projects.\n\n"
-            #             "QUESTION: {query}\n\n"
-            #             "ReWritten query: {rewritten}\n\n"
-            #             "CODE CONTEXT:\n{context}\n\n"
-            #             "INSTRUCTIONS:\n"
-            #             "- Answer the question directly using the code context provided\n"
-            #             "- Cite specific files or code when explaining\n"
-            #             "- If context is insufficient, say so clearly\n"
-            #             "- Be practical and concise\n\n"
-            #         ),
-            #     )
-                
-            #     final_chain = final_prompt | self.llm
-            #     result = final_chain.invoke({
-            #         "context": formatted_context,
-            #         "query": query,
-            #         "rewritten": rewritten,
-            #     })
-            #     log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\n Local Whole result before stripping: {result}")
-            #     answer = getattr(result, "content", str(result))
 
             st.session_state.thinking_logs.append("✅ Answer generated successfully!")
             update_logs(log_placeholder)
