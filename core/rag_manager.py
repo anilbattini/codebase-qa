@@ -3,8 +3,8 @@ import shutil
 import streamlit as st
 from langchain_ollama import ChatOllama
 from langchain.chains import RetrievalQA
-from config import ProjectConfig
-from model_config import model_config
+from config.config import ProjectConfig
+from config.model_config import model_config
 from logger import log_highlight, log_to_sublog
 from build_rag import build_rag
 from chat_handler import ChatHandler

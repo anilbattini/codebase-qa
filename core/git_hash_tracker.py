@@ -3,7 +3,7 @@ import hashlib
 import json
 import subprocess
 from logger import log_highlight, log_to_sublog
-from config import ProjectConfig
+from config.config import ProjectConfig
 
 class FileHashTracker:
     """

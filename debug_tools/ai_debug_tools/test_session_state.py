@@ -54,7 +54,7 @@ def test_database_cleanup():
     
     try:
         from rag_manager import RagManager
-        from config import ProjectConfig
+        from config.config import ProjectConfig
         
         # Create a temporary directory for testing
         with tempfile.TemporaryDirectory() as temp_dir:

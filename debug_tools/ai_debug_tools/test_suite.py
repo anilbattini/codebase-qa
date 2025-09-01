@@ -54,7 +54,7 @@ class TestSuite:
                 return result
             
             # Test project configuration
-            from config import ProjectConfig
+            from config.config import ProjectConfig
             project_config = ProjectConfig(
                 project_type=config["project_type"],
                 project_dir=config["project_dir"]

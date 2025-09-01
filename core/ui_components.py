@@ -3,8 +3,8 @@
 import streamlit as st
 import os
 import shutil
-from config import ProjectConfig
-from model_config import model_config
+from config.config import ProjectConfig
+from config.model_config import model_config
 from logger import get_project_log_file, log_highlight, log_to_sublog, rate_and_copy
 from logger import get_project_log_file
 

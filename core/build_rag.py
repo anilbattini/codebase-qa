@@ -13,8 +13,8 @@ from langchain_ollama import OllamaEmbeddings
 from chunker_factory import get_chunker, summarize_chunk
 from context_builder import ContextBuilder
 from git_hash_tracker import FileHashTracker
-from config import ProjectConfig
-from model_config import model_config
+from config.config import ProjectConfig
+from config.model_config import model_config
 from metadata_extractor import MetadataExtractor
 from hierarchical_indexer import HierarchicalIndexer
 from cross_reference_builder import CrossReferenceBuilder

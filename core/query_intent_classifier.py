@@ -2,7 +2,7 @@
 
 import re
 from typing import Tuple, Dict, List, Optional
-from config import ProjectConfig
+from config.config import ProjectConfig
 from logger import log_highlight, log_to_sublog
 
 class QueryIntentClassifier:

@@ -10,8 +10,8 @@ from langchain_community.vectorstores import Chroma
 
 # Add parent directory to path to import from codebase-qa root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import ProjectConfig
-from model_config import model_config
+from config.config import ProjectConfig
+from config.model_config import model_config
 from logger import log_highlight, log_to_sublog
 from rag_manager import RagManager
 

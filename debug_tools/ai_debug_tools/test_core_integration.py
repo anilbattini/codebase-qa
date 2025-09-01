@@ -35,7 +35,7 @@ def test_core_integration():
         print("\n🧪 TEST 1: Core Modules Import")
         print("-" * 40)
         
-        from config import ProjectConfig
+        from config.config import ProjectConfig
         from rag_manager import RagManager
         print("✅ Core modules imported successfully")
         

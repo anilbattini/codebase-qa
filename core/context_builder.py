@@ -1,6 +1,6 @@
 # core/context_builder.py
 
-from config import ProjectConfig
+from config.config import ProjectConfig
 from langchain.docstore.document import Document
 from logger import log_highlight, log_to_sublog
 from typing import Dict, List, Optional

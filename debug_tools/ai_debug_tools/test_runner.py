@@ -126,7 +126,7 @@ class TestRunner:
         if core_path not in sys.path:
             sys.path.insert(0, core_path)
         
-        from model_config import model_config
+        from config.model_config import model_config
         
         return {
             "project_dir": project_dir,

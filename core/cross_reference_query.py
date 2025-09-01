@@ -3,7 +3,7 @@
 import os
 import json
 from typing import Dict, List, Optional
-from config import ProjectConfig
+from config.config import ProjectConfig
 from logger import log_to_sublog
 
 class CrossReferenceQuery:

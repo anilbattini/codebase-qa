@@ -16,7 +16,7 @@ def test_retriever_configuration():
     try:
         from langchain_chroma import Chroma
         from langchain_ollama import OllamaEmbeddings
-        from config import ProjectConfig
+        from config.config import ProjectConfig
         
         # Test configuration
         project_config = ProjectConfig(project_type="android", project_dir="../../")

@@ -50,7 +50,7 @@ class UITests:
             if core_path not in sys.path:
                 sys.path.insert(0, core_path)
             
-            from config import ProjectConfig
+            from config.config import ProjectConfig
             import streamlit as st
             
             # Setup project config

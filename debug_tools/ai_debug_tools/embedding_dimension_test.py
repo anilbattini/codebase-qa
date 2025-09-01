@@ -13,7 +13,7 @@ from typing import Dict, Any
 # Add the core directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'core'))
 
-from config import ProjectConfig
+from config.config import ProjectConfig
 from logger import log_to_sublog, log_highlight
 
 class EmbeddingDimensionTest:

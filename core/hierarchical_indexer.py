@@ -2,10 +2,10 @@ import os
 import json
 from typing import Any, Dict, List, Optional
 from langchain.docstore.document import Document
-from config import ProjectConfig
+from config.config import ProjectConfig
 
 from logger import log_highlight, log_to_sublog
-from config import ProjectConfig
+from config.config import ProjectConfig
 
 class HierarchicalIndexer:
     """

@@ -17,7 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'core'))
 
 from chat_handler import ChatHandler
 from rag_manager import RagManager
-from config import ProjectConfig
+from config.config import ProjectConfig
 from logger import log_to_sublog, log_highlight
 
 class QualityTestSuite:

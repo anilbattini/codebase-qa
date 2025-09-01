@@ -64,7 +64,7 @@ def _get_logs_dir(project_dir):
     
     # Import ProjectConfig here to avoid circular dependency at module level
     try:
-        from config import ProjectConfig 
+        from config.config import ProjectConfig 
         
         # Try to get project type from session state or environment
         project_type = None

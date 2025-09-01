@@ -3,7 +3,7 @@
 import re
 import ast
 from typing import List, Dict, Optional, Set, Union, Tuple
-from config import ProjectConfig
+from config.config import ProjectConfig
 from logger import log_highlight, log_to_sublog
 
 class MetadataExtractor:

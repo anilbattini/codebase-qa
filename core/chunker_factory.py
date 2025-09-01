@@ -2,7 +2,7 @@ import os
 import re
 from typing import Dict, List, Any
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from config import ProjectConfig
+from config.config import ProjectConfig
 from logger import log_highlight, log_to_sublog
 
 class SemanticChunker:

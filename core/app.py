@@ -2,13 +2,13 @@
 
 import os
 import streamlit as st
-from model_config import model_config
+from config.model_config import model_config
 from rag_manager import RagManager
 from ui_components import UIComponents
 from chat_handler import ChatHandler
 from logger import setup_global_logger, log_highlight
 from logger import move_query_log, rate_and_copy
-from config import ProjectConfig
+from config.config import ProjectConfig
 from process_manager import ProcessManager
 from dotenv import load_dotenv
 
