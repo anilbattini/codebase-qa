@@ -77,35 +77,41 @@ class SemanticChunker:
             return self._chunk_generic_content(content)
         return chunks
 
+    # core/chunker_factory.py - ENHANCED _calculate_semantic_score
     def _calculate_semantic_score(self, chunk: str, file_ext: str) -> float:
-        """Calculate semantic richness score for a chunk."""
+        """🚀 ENHANCED: Use metadata richness for better chunk quality scoring."""
         score = 0.0
         
-        # Higher score for chunks with class/function definitions
+        # Get enhanced metadata for this chunk
+        from metadata_extractor import MetadataExtractor
+        extractor = MetadataExtractor(self.config)
+        metadata = extractor.create_enhanced_metadata(chunk, f"temp.{file_ext}", 0)
+        
+        # Score based on metadata richness
+        if metadata.get("method_signatures"):
+            score += len(metadata["method_signatures"]) * 0.5
+        
+        if metadata.get("design_patterns"):
+            score += len(metadata["design_patterns"]) * 2.0  # Very valuable
+        
+        if metadata.get("inheritance_info", {}).get("extends"):
+            score += 2.0  # Important architectural information
+        
+        if metadata.get("call_sites"):
+            score += min(len(metadata["call_sites"]) * 0.3, 3.0)  # Cap at 3.0
+        
+        # Existing scoring logic...
         if re.search(r'\bclass\s+\w+', chunk):
             score += 2.0
-        if re.search(r'\bfun\s+\w+', chunk) or re.search(r'\bdef\s+\w+', chunk):
-            score += 1.5
-            
-        # Higher score for chunks with imports/dependencies
-        if re.search(r'\bimport\s+', chunk) or re.search(r'\bfrom\s+', chunk):
-            score += 1.0
-            
-        # Higher score for chunks with configuration/setup
-        if re.search(r'\bconfig\b', chunk, re.IGNORECASE) or re.search(r'\bsetup\b', chunk, re.IGNORECASE):
-            score += 1.0
-            
-        # Higher score for chunks with UI elements
-        if re.search(r'\bButton\b|\bTextView\b|\bRecyclerView\b|\bFragment\b', chunk):
-            score += 1.5
-            
-        # Higher score for longer, more detailed chunks
-        if len(chunk) > 500:
-            score += 0.5
-        if len(chunk) > 1000:
-            score += 0.5
-            
+        
+        # NEW: Penalize chunks without semantic anchors
+        anchors = [metadata.get("class_names"), metadata.get("function_names"), 
+                metadata.get("screen_name"), metadata.get("component_name")]
+        if not any(anchors):
+            score -= 1.0  # Penalize anchor-less chunks
+        
         return score
+
 
     def _chunk_generic_content(self, content: str) -> List[Dict[str, Any]]:
         splitter = RecursiveCharacterTextSplitter(
