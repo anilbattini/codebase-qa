@@ -28,6 +28,69 @@ class ContextBuilder:
             'inheritance': self._build_inheritance_context,
             'impact': self._build_impact_context
         }
+        
+    
+    def create_full_context(self, docs: List) -> str:
+        """
+        Create full context from retrieved documents WITHOUT truncation.
+        🔧 FIX: Provides complete document content to LLM.
+        """
+        if not docs:
+            return "No relevant context found for this query."
+        
+        context_parts = []
+        total_chars = 0
+        max_total_context = 8000  # Reasonable limit for LLM context window
+        
+        # Log the actual context being sent
+        log_to_sublog(self.project_dir, "preparing_full_context.log", 
+                        f"\n\nLooping through retrieved docs and logging context and metadata.")
+            
+        for i, doc in enumerate(docs, 1):
+            # Extract full content safely
+            content = getattr(doc, 'page_content', '') or str(doc)
+            metadata = getattr(doc, 'metadata', {})
+            
+            # Log the actual context being sent
+            log_to_sublog(self.project_dir, "preparing_full_context.log", 
+                        f"\n\nIteration{i}: Content:\n {content} \n\nMetadata:\n {metadata}")
+            
+            # Get source information
+            source = metadata.get('source', 'unknown')
+            chunk_info = metadata.get('chunk_index', f'chunk_{i}')
+            
+            # Use FULL content, not truncated
+            if content and len(content.strip()) > 0:
+                formatted_section = (
+                    f"📄 Document {i}: {source}\n"
+                    f"{content}\n"
+                    f"{'─' * 50}\n"
+                )
+                
+                # Only limit total context if it becomes excessive
+                if total_chars + len(formatted_section) < max_total_context:
+                    context_parts.append(formatted_section)
+                    total_chars += len(formatted_section)
+                else:
+                    # If we hit limit, at least include a meaningful portion
+                    remaining_space = max_total_context - total_chars - 200
+                    if remaining_space > 500:  # Only if we have meaningful space left
+                        truncated_content = content[:remaining_space] + f"\n[Content truncated - {len(content)} total chars]"
+                        formatted_section = (
+                            f"📄 Document {i}: {source}\n"
+                            f"{truncated_content}\n"
+                            f"{'─' * 50}\n"
+                        )
+                        context_parts.append(formatted_section)
+                    break
+        
+        final_context = '\n'.join(context_parts)
+        
+        # Log the actual context being sent
+        log_to_sublog(self.project_dir, "chat_handler.log", 
+                    f"Final context: {len(final_context)} chars, {len(context_parts)} documents")
+        
+        return final_context
 
     def _filter_valid_documents(self, documents: List[Document]) -> List[Document]:
         """Filter out invalid/error documents but preserve content length."""
@@ -466,6 +529,19 @@ class ContextBuilder:
                 if isinstance(metadata, dict):
                     source = metadata.get('source', 'unknown')
                     parts.append(f"📄 Document {i+1}: {source}")
+                    
+                    # 🚀 NEW: Add rich metadata summary
+                    metadata_summary = []
+                    if metadata.get("design_patterns"):
+                        metadata_summary.append(f"Patterns: {', '.join(metadata['design_patterns'])}")
+                    if metadata.get("method_signatures"):
+                        method_count = len(metadata["method_signatures"])
+                        metadata_summary.append(f"Methods: {method_count}")
+                    if metadata.get("inheritance_info", {}).get("extends"):
+                        metadata_summary.append(f"Extends: {', '.join(metadata['inheritance_info']['extends'])}")
+                    
+                    if metadata_summary:
+                        parts.append(f"📋 Meta {' | '.join(metadata_summary)}")
                     
                     # 🔧 FIXED: Use FULL content instead of truncated preview
                     content = doc.page_content or ""

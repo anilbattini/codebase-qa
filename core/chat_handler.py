@@ -128,7 +128,7 @@ class ChatHandler:
             
             if reranked_docs:
                 # 🔧 FIX: Use full context method instead of truncated
-                formatted_context = self._create_full_context(reranked_docs)
+                formatted_context = self.context_builder.create_full_context(reranked_docs)
                 
                 # Log context quality
                 log_to_sublog(self.project_dir, "chat_handler.log", 
