@@ -37,15 +37,22 @@ class ChatHandler:
             template=(
                 "You are a codebase search assistant. Convert the following question into a simple, searchable query "
                 "for searching a {project_type} project codebase.\n\n"
-                "Intent: {intent}\nOriginal: {original}\n\n"
-                "Return ONLY a concise search query (no explanations, no alternatives, no markdown). "
-                "Focus on key terms that would appear in the codebase.\n\n"
-                "IMPORTANT: For questions about 'what does this project do', 'project overview', or 'main purpose', "
-                "include terms like: main activity, MainActivity, application, app purpose, project structure, "
-                "manifest, build.gradle, README, documentation.\n\n"
+                "Intent: {intent}\nOriginal query: {original}\n\n"
+                "CRITICAL RULES:\n"
+                "- Return ONLY a single, concise search query (no explanations, no alternatives, no markdown)\n"
+                "- DO NOT use 'OR', 'AND', or multiple query variations\n"
+                "- Focus on 2-5 key terms that would appear in the actual code files\n"
+                "- For screen/UI queries: focus on screen names, composable names, activity names\n"
+                "- For logic queries: focus on function names, class names, file names\n"
+                "- Remove quotes and special characters that might confuse search\n\n"
+                "Examples:\n"
+                "- 'Where is login screen logic?' → 'LoginScreen composable activity'\n"
+                "- 'How does authentication work?' → 'authentication login verify user'\n"
+                "- 'What does this app do?' → 'MainActivity README app purpose'\n\n"
             ),
         )
         return prompt | self.rewrite_llm
+
 
 
     def _create_full_context(self, docs: List) -> str:
