@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codebase-qa"
-version = "0.1.1"
+version = "0.2.6"
 description = "A RAG-powered codebase question answering tool with Streamlit UI"
 readme = "README.md"
 license = {text = "MIT"}
