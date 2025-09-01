@@ -30,25 +30,22 @@ class ChatHandler:
         self.query_intent_classifier = QueryIntentClassifier(project_config)
 
 
+    # core/chat_handler.py - ENHANCED _create_rewrite_chain
     def _create_rewrite_chain(self):
-        """Create a chain for rewriting queries to be more searchable using the dedicated rewrite LLM."""
+        """🚀 FIXED: Prevent explanation contamination in rewritten queries."""
         prompt = PromptTemplate(
             input_variables=["original", "project_type", "intent"],
             template=(
-                "You are a codebase search assistant. Convert the following question into a simple, searchable query "
-                "for searching a {project_type} project codebase.\n\n"
-                "Intent: {intent}\nOriginal query: {original}\n\n"
-                "CRITICAL RULES:\n"
-                "- Return ONLY a single, concise search query (no explanations, no alternatives, no markdown)\n"
-                "- DO NOT use 'OR', 'AND', or multiple query variations\n"
-                "- Focus on 2-5 key terms that would appear in the actual code files\n"
-                "- For screen/UI queries: focus on screen names, composable names, activity names\n"
-                "- For logic queries: focus on function names, class names, file names\n"
-                "- Remove quotes and special characters that might confuse search\n\n"
+                "Convert this question into search terms for a {project_type} codebase.\n\n"
+                "Intent: {intent}\n"
+                "Question: {original}\n\n"
+                "CRITICAL: Return ONLY the search terms, nothing else.\n"
+                "NO explanations, NO formatting, NO additional text.\n\n"
                 "Examples:\n"
-                "- 'Where is login screen logic?' → 'LoginScreen composable activity'\n"
-                "- 'How does authentication work?' → 'authentication login verify user'\n"
+                "- 'Where is login screen?' → 'LoginScreen composable activity'\n"
+                "- 'How does auth work?' → 'authentication login verify token'\n"
                 "- 'What does this app do?' → 'MainActivity README app purpose'\n\n"
+                "Search terms:"
             ),
         )
         return prompt | self.rewrite_llm
@@ -121,7 +118,7 @@ class ChatHandler:
             # Rerank and metadata
             source_documents = retrieved_docs
             if source_documents:
-                reranked_docs = self._rerank_docs_by_intent(source_documents, query, intent)
+                reranked_docs = self.query_intent_classifier.rerank_docs_by_intent(source_documents, query, intent)
                 log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
                 log_to_sublog(self.project_dir, "preparing_full_context.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
 
@@ -198,100 +195,91 @@ class ChatHandler:
 
 
     def _retrieve_with_fallback(self, retriever, query, rewritten, log_placeholder):
-        """Retrieve documents with multiple fallback strategies."""
+        """Retrieve documents with multiple separate fallback strategies."""
+        
+        # Strategy 1: Try rewritten query first (most focused)
         try:
-            # Try with rewritten query first
-            # or lets try the combined query
-            combined_query = f'{rewritten} or "{query}"'
-             # Log the actual context being sent
-            log_to_sublog(self.project_dir, "preparing_full_context.log", 
-                        f"\n\nRewritten combined query: {combined_query }")
-            retrieved_docs = retriever.invoke(combined_query)
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with rewritten query")
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                        f"Strategy 1: Trying rewritten query: '{rewritten}'")
             
-            # If no results, try with original query as fallback
-            if not retrieved_docs:
-                st.session_state.thinking_logs.append("⚠️ No results with rewritten query, trying original...")
-                update_logs(log_placeholder)
-                retrieved_docs = retriever.invoke(query)
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with original query")
+            retrieved_docs = retriever.invoke(rewritten)
             
-            # If still no results, try with key terms
-            if not retrieved_docs:
-                st.session_state.thinking_logs.append("⚠️ No results, trying with key terms...")
-                update_logs(log_placeholder)
-                key_terms = self._extract_key_terms(combined_query) # Using combined query, instead of just original query
-                if key_terms:
-                    key_query = " ".join(key_terms)
-                    retrieved_docs = retriever.invoke(key_query)
-                    log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieved {len(retrieved_docs)} documents with key terms: {key_terms}")
-            
-            return retrieved_docs
+            if retrieved_docs and len(retrieved_docs) >= 2:  # Good results threshold
+                log_to_sublog(self.project_dir, "chat_handler.log", 
+                            f"Strategy 1 SUCCESS: Retrieved {len(retrieved_docs)} documents with rewritten query")
+                return retrieved_docs
+                
+            log_to_sublog(self.project_dir, "chat_handler.log", 
+                        f"Strategy 1: Insufficient results ({len(retrieved_docs)}) with rewritten query")
             
         except Exception as e:
-            st.error(f"❌ Retrieval failed: {e}")
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Retrieval failed: {e}")
-            return []
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Strategy 1 failed: {e}")
+            retrieved_docs = []
 
-    def _create_enhanced_query_v2(self, original_query, rewritten_query, intent, impact_context, phase3_context):
-        """Create final-answer prompt content with Phase 3 context."""
-        return f"""You are a senior codebase analyst. Answer ONLY using the Context below.
-
-    === Context ===
-    {phase3_context if phase3_context else "(no additional context)"}
-
-    === Original Query ===
-    {original_query}
-
-    === Rewritten Query ===
-    {rewritten_query}
-
-    === Intent ===
-    {intent}
-
-    {("=== Impact ===" + impact_context) if impact_context else ""}
-
-    Instructions:
-    - Use the Context strictly; do not invent facts or generalities.
-    - Cite specific files/chunks from the Context when explaining.
-    - If the Context lacks enough information, say: "Insufficient context to answer precisely."
-    - Provide a concise, definitive answer tailored to the intent.
-
-    Now provide the answer:"""
-    
-    def _rerank_docs_by_intent(self, source_documents, query, intent):
-        """Rerank and return actual Document objects (not file name strings)."""
-        def score(doc):
-            source = doc.metadata.get("source", "").lower()
-            content = doc.page_content.lower()
-            meta = doc.metadata
-            score = 0
+        # Strategy 2: Try original query if rewritten didn't work well
+        try:
+            st.session_state.thinking_logs.append("⚠️ Trying original query...")
+            update_logs(log_placeholder)
             
-            for token in query.lower().split():
-                if token in content:
-                    score += 1
-                if token in source:
-                    score += 0.5
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                        f"Strategy 2: Trying original query: '{query}'")
             
-            if intent == "overview":
-                if any(pf in source for pf in self.project_config.get_priority_files()):
-                    score += 5
-            elif intent == "business_logic":
-                score += len(meta.get("business_logic_indicators", [])) * 2
-                if meta.get("validation_rules"):
-                    score += 3
-            elif intent == "ui_flow":
-                score += len(meta.get("ui_elements", [])) * 2
-            elif intent == "technical":
-                if meta.get("chunk_hierarchy") == "function":
-                    score += 4
-                score += meta.get("complexity_score", 0) * 0.3
+            original_docs = retriever.invoke(query)
             
-            return score
+            if original_docs and len(original_docs) >= 2:
+                log_to_sublog(self.project_dir, "chat_handler.log", 
+                            f"Strategy 2 SUCCESS: Retrieved {len(original_docs)} documents with original query")
+                return original_docs
+                
+            # Combine results if both had some results but neither was great
+            if retrieved_docs and original_docs:
+                combined_docs = retrieved_docs + [doc for doc in original_docs if doc not in retrieved_docs]
+                log_to_sublog(self.project_dir, "chat_handler.log", 
+                            f"Strategy 2: Combined results - {len(combined_docs)} total documents")
+                return combined_docs[:10]  # Limit to top 10
+                
+            log_to_sublog(self.project_dir, "chat_handler.log", 
+                        f"Strategy 2: Insufficient results ({len(original_docs)}) with original query")
+            
+        except Exception as e:
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Strategy 2 failed: {e}")
+            original_docs = []
+
+        # Strategy 3: Extract key terms and search (last resort)
+        try:
+            st.session_state.thinking_logs.append("⚠️ Trying key terms extraction...")
+            update_logs(log_placeholder)
+            
+            # Extract key terms from ORIGINAL query (not rewritten)
+            key_terms = self._extract_key_terms(query)
+            
+            if key_terms:
+                # Create focused key term query (max 3-4 terms)
+                key_query = " ".join(key_terms[:4])
+                
+                log_to_sublog(self.project_dir, "preparing_full_context.log",
+                            f"Strategy 3: Trying key terms: '{key_query}' from terms: {key_terms}")
+                
+                key_docs = retriever.invoke(key_query)
+                
+                log_to_sublog(self.project_dir, "chat_handler.log", 
+                            f"Strategy 3: Retrieved {len(key_docs)} documents with key terms: {key_terms}")
+                
+                return key_docs
+                
+        except Exception as e:
+            log_to_sublog(self.project_dir, "chat_handler.log", f"Strategy 3 failed: {e}")
+
+        # Return whatever we have, even if it's not ideal
+        all_docs = retrieved_docs + original_docs if retrieved_docs or original_docs else []
+        final_count = len(all_docs)
         
-        sorted_docs = sorted(source_documents, key=score, reverse=True)
-        return sorted_docs[:5]
+        log_to_sublog(self.project_dir, "chat_handler.log", 
+                    f"Final fallback: Returning {final_count} documents from all strategies")
+        
+        return all_docs[:5] if all_docs else []
 
+    
     def _rewrite_query_with_intent(self, query, intent, log_placeholder, debug_mode):
         """Enhanced query rewriting with intent awareness."""
         try:
