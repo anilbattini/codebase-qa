@@ -414,9 +414,37 @@ class ChatHandler:
         return list(set(file_mentions))
 
     def _extract_key_terms(self, query):
-        """Extract key terms from a query using a simple tokenizer."""
-        tokens = re.findall(r'\b\w+\b', query.lower())
-        return [t for t in tokens if len(t) > 3 and not t.isdigit()]
+        """Extract key terms from a query with better filtering for code search."""
+        import re
+        
+        # Remove common question words and focus on content
+        stop_words = {'what', 'where', 'how', 'when', 'why', 'which', 'who', 'does', 'should', 'can', 'will', 
+                    'the', 'this', 'that', 'and', 'or', 'but', 'for', 'with', 'from', 'about', 'into'}
+        
+        # Extract potential code/file terms (preserve quotes content, camelCase, etc.)
+        tokens = re.findall(r'"[^"]+"|[A-Z][a-z]+(?:[A-Z][a-z]*)*|\b\w+\b', query)
+        
+        key_terms = []
+        for token in tokens:
+            # Remove quotes but keep the content
+            clean_token = token.strip('"').lower()
+            
+            # Keep terms that are likely code-related or important
+            if (len(clean_token) > 3 and 
+                clean_token not in stop_words and 
+                not clean_token.isdigit()):
+                key_terms.append(clean_token)
+        
+        # Prioritize quoted terms and camelCase terms
+        quoted_terms = [t.strip('"') for t in tokens if t.startswith('"')]
+        camel_case_terms = [t for t in tokens if re.match(r'^[A-Z][a-z]+(?:[A-Z][a-z]*)*$', t)]
+        
+        # Combine prioritized terms first
+        prioritized = quoted_terms + camel_case_terms
+        final_terms = prioritized + [t for t in key_terms if t not in prioritized]
+    
+        return final_terms[:6]  # Return top 6 terms max
+
 
     def _create_enhanced_query(self, original_query, rewritten_query, intent, impact_context, enhanced_context):
         """Original enhanced query creation method."""
