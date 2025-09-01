@@ -1,18 +1,59 @@
+# core/query_intent_classifier.py - ENHANCED VERSION
+
 import re
 from typing import Tuple, Dict, List, Optional
 from config import ProjectConfig
 from logger import log_highlight, log_to_sublog
 
 class QueryIntentClassifier:
-    """Classifies user queries into supported RAG intents (overview, validation, ui_flow, impact, etc.) with logging."""
-
-    # Extend or refine as needed; data-driven for easy add/remove
+    """Enhanced classifier supporting questionnaire-level complexity."""
+    
+    # core/query_intent_classifier.py - ENHANCED PATTERN_MAP
     PATTERN_MAP: Dict[str, List[str]] = {
         "overview": [
+            # EXISTING patterns...
             r"\b(overview|structure|architecture|summary|top level|entry point|project files|high level|all files|main flow|overall)\b",
             r"\b(what does this project do|project purpose|main purpose|what is this|project description|project overview)\b",
-            r"\b(what is the main|main activity|MainActivity|application purpose|app does what)\b"
+            r"\b(what is the main|main activity|MainActivity|application purpose|app does what|name of.*application)\b",
+            # 🚀 NEW: Missing patterns for better coverage
+            r"\b(application name|project name|app name|what.*app.*called)\b",
+            r"\b(usage|use case|end.?user|how.*use|purpose|functionality)\b",
+            r"\b(features|capabilities|what.*can.*do|main.*function)\b"
         ],
+        
+        "location_usage": [
+            # Enhanced patterns with method signature keywords
+            r"\b(where is|where are|location of|definition of|find|locate)\b.*\b(class|method|function|component|file|screen|logic)\b",
+            r"\b(which file|which module|which package|in what file|where should I)\b",
+            r"\b(how many times|invoked|called|used|imported)\b",
+            r"\b(add.*feature|write.*logic|implement.*functionality|modify.*code)\b",
+            # 🚀 NEW: Method signature related patterns
+            r"\b(method signature|function signature|parameters|return type)\b",
+            r"\b(override|implement|extend)\b.*\b(method|function)\b"
+        ],
+        
+        "code_relationship": [  # NEW: Level 3 - Relationships & flow
+            r"\b(inherit|inheritance|extends|implements|override|call hierarchy|dependency|dependencies)\b",
+            r"\b(calls|called by|invokes|invoked by|interacts with|communicates with)\b", 
+            r"\b(upstream|downstream|parent|child|base class|derived class)\b",
+            r"\b(data flow|execution flow|control flow|passes data)\b"
+        ],
+        
+        "semantic_reasoning": [  # NEW: Level 4 - Deep understanding
+            r"\b(architectural role|design pattern|system role|responsibility|collaborate)\b",
+            r"\b(complete flow|end to end|lifecycle|user interaction|backend processing)\b",
+            r"\b(state management|data transformation|error handling|exception handling)\b",
+            r"\b(ripple effect|breaking change|impact|modify.*return type|change.*logic)\b"
+        ],
+        
+        "deep_architecture": [  # NEW: Level 5 - Advanced reasoning
+            r"\b(integration|third.party|external service|API|diagnostic|debug|troubleshoot)\b",
+            r"\b(concurrency|thread safety|performance|scalability|bottleneck|race condition)\b",
+            r"\b(retry mechanism|circuit breaker|fallback|high availability)\b",
+            r"\b(framework decision|pattern choice|trade.off|maintainability|testability)\b"
+        ],
+        
+        # EXISTING intents remain
         "validation": [
             r"\b(validate|input field|required|constraint|rules|check for|form field|input rule|not null|input error)\b",
         ],
