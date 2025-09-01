@@ -64,61 +64,191 @@ class QueryIntentClassifier:
             r"\b(business logic|process|calculation|rule engine|invoicing|business process|workflow|authorization|permission|role check|policy|auth)\b"
         ],
         "impact_analysis": [
-            r"\b(impact|what if|affect|break|consequence|dependency|dependencies|refactor|change in|modifying)\b"
+            r"\b(impact|what if|affect|break|consequence|refactor|change in|modifying)\b"
         ]
     }
 
     def __init__(self, project_config: Optional[ProjectConfig] = None):
         self.project_config = project_config or ProjectConfig()
         log_highlight("QueryIntentClassifier initialized")
-
-    def classify_intent(self, query: str) -> Tuple[str, float]:
-        """Returns (intent_label, confidence_score) for user query."""
-        log_highlight("QueryIntentClassifier.classify_intent")
         
-        # Check for project overview questions first (highest priority)
-        overview_patterns = [
-            r"\b(what does this project do|project purpose|main purpose|what is this|project description|project overview)\b",
-            r"\b(what is the main|main activity|MainActivity|application purpose|app does what)\b"
+    def classify_intent(self, query: str) -> Tuple[str, float]:
+        """Enhanced classification with higher confidence scores."""
+        
+        # Priority order: More specific intents first
+        priority_order = [
+            ('deep_architecture', 0.95),
+            ('semantic_reasoning', 0.90), 
+            ('code_relationship', 0.85),
+            ('location_usage', 0.80),
+            ('overview', 0.85),
+            ('impact_analysis', 0.80),
+            ('business_logic', 0.75),
+            ('ui_flow', 0.75),
+            ('validation', 0.75)
         ]
         
-        for pat in overview_patterns:
-            if re.search(pat, query, re.IGNORECASE):
-                log_to_sublog(".", 'intent_classification.log',
-                              f"[HIGH CONFIDENCE] Query: '{query}' matched 'overview' via pattern '{pat}'.")
-                return 'overview', 0.95  # High confidence for project overview questions
+        for intent, base_confidence in priority_order:
+            if intent in self.PATTERN_MAP:
+                for pattern in self.PATTERN_MAP[intent]:
+                    if re.search(pattern, query, re.IGNORECASE):
+                        log_to_sublog(".", 'intent_classification.log',
+                                    f"[MATCHED] Query: '{query}' -> '{intent}' (confidence: {base_confidence})")
+                        return intent, base_confidence
         
-        # Check other patterns
-        for label, patterns in self.PATTERN_MAP.items():
-            for pat in patterns:
-                if re.search(pat, query, re.IGNORECASE):
-                    confidence = 0.9 if label == 'overview' else 0.8
-                    log_to_sublog(".", 'intent_classification.log',
-                                  f"[SELECTED] Query: '{query}' matched '{label}' via pattern '{pat}'.")
-                    return label, confidence
-        
-        # No strong match, fallback to default (can add LLM classifier for advanced disambiguation)
+        # Fallback with better confidence
         log_to_sublog(".", 'intent_classification.log',
-                      f"[FALLBACK] Query: '{query}'—no pattern match. Defaulting to technical.")
-        return 'technical', 0.5
+                     f"[FALLBACK] Query: '{query}' -> 'technical' (confidence: 0.6)")
+        return 'technical', 0.6  # Increased from 0.5
+    
+    
+    def rerank_docs_by_intent(self, source_documents, query, intent):
+        """
+        Enhanced reranking supporting dynamic intent types via classifier patterns.
+        
+        Args:
+            source_documents: List of retrieved Document objects
+            query: Original user query string
+            intent: Classified intent label
+            classifier: QueryIntentClassifier instance for pattern access
+            
+        Returns:
+            List[Document]: Top 5 reranked documents based on intent-specific scoring
+        """
+        
+        def score(doc):
+            """
+            Calculate relevance score for document based on query and intent.
+            
+            Args:
+                doc: Document object with metadata and content
+                
+            Returns:
+                float: Computed relevance score
+            """
+            source = doc.metadata.get("source", "").lower()
+            content = doc.page_content.lower()
+            meta = doc.metadata
+            score = 0.0
+            
+            # Base query token matching
+            query_tokens = [token.strip() for token in query.lower().split() if len(token.strip()) > 2]
+            for token in query_tokens:
+                if token in content:
+                    score += 1.0
+                if token in source:
+                    score += 0.5
+            
+            # Intent-specific scoring - dynamically handle all intents from classifier
+            if intent in self.PATTERN_MAP:
+                score += self._apply_intent_specific_scoring(intent, meta, source)
+            else:
+                # Fallback scoring for unknown intents
+                score += self._apply_fallback_scoring(meta)
+            
+            return score
+        
+        # Sort and return top documents
+        sorted_docs = sorted(source_documents, key=score, reverse=True)
+        return sorted_docs[:5]
 
-    def get_query_context_hints(self, intent: str, query: str) -> Dict[str, List[str]]:
-        """Provides context hints or anchor terms based on intent for use in retrieval/context phase."""
-        hints = {}
-        if intent in ['validation', 'business_logic']:
-            extracted = re.findall(r'"([\w_]+)"|\'([\w_]+)\'|(\w+Field|\w+Input|[A-Z][a-zA-Z0-9]+Screen)', query)
-            hints['fields_or_screens'] = [item for group in extracted for item in group if item]
-        elif intent == 'overview':
-            hints['overview_keywords'] = [k for k in self.project_config.get_summary_keywords()]
-        elif intent == 'ui_flow':
-            hints['ui_keywords'] = ["navigate", "screen", "fragment", "activity", "route"]
-        return hints
+    # core/chat_handler.py - ENHANCED _apply_intent_specific_scoring
+    def _apply_intent_specific_scoring(self, intent: str, meta: dict, source: str) -> float:
+        """🚀 ENHANCED: Leverage rich metadata for superior scoring."""
+        intent_score = 0.0
+        
+        # core/chat_handler.py - ADD to _apply_intent_specific_scoring
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - No more in-method print() or ad-hoc diagnostic logging; all logs routed through logger.py.
-# - Any duplicated intent label logic elsewhere—get_query_context_hints is the only place for context hint extraction.
-# ADDED
-# - Table-driven intent pattern map (easy to add/edit; per-stack hints come from config).
-# - Centralized logging for all classification/fallback decisions.
-# - get_query_context_hints acts as single place to extract retrieval/context anchor hints per intent.
+        if intent == "overview":
+            # 🚀 ENHANCED: Comprehensive priority file detection
+            priority_files = ["readme", "agent.md", "main", "manifest", "app.py", "index", "home"]
+            if any(pf in source for pf in priority_files):
+                intent_score += 5.0
+            
+            # NEW: Boost based on file-level metadata richness
+            file_metadata_richness = 0
+            if meta.get("class_names"):
+                file_metadata_richness += len(meta["class_names"])
+            if meta.get("function_names"):
+                file_metadata_richness += len(meta["function_names"])
+            if meta.get("business_logic_indicators"):
+                file_metadata_richness += len(meta["business_logic_indicators"])
+    
+            # Files with rich metadata are good for overview
+            if file_metadata_richness >= 5:
+                intent_score += 3.0
+
+                
+        elif intent == "location_usage":
+            # Enhanced with method signatures and call sites
+            if meta.get("method_signatures"):
+                intent_score += 4.0
+            if meta.get("call_sites"):
+                intent_score += 3.0
+            # NEW: Boost based on semantic score from chunker
+            semantic_score = meta.get("semantic_score", 0)
+            if isinstance(semantic_score, (int, float)) and semantic_score > 2.0:
+                intent_score += 2.0
+                
+        elif intent == "code_relationship":
+            # Leverage inheritance and call graph data
+            inheritance_info = meta.get("inheritance_info", {})
+            if isinstance(inheritance_info, dict):
+                if inheritance_info.get("extends") or inheritance_info.get("implements"):
+                    intent_score += 5.0
+            # NEW: Boost based on call sites richness
+            call_sites = meta.get("call_sites", [])
+            if isinstance(call_sites, list) and len(call_sites) >= 3:
+                intent_score += 4.0
+                
+        elif intent == "semantic_reasoning":
+            # Leverage design patterns and architectural indicators
+            design_patterns = meta.get("design_patterns", [])
+            if isinstance(design_patterns, list) and design_patterns:
+                intent_score += 5.0  # Very important for architectural questions
+            # NEW: Boost based on error handling sophistication
+            error_patterns = meta.get("error_handling_patterns", [])
+            if isinstance(error_patterns, list) and len(error_patterns) >= 2:
+                intent_score += 3.0
+            # NEW: Boost based on chunk hierarchy depth
+            chunk_hierarchy = meta.get("chunk_hierarchy", "")
+            if isinstance(chunk_hierarchy, str) and ">" in chunk_hierarchy:
+                intent_score += 2.0
+                
+        elif intent == "deep_architecture":
+            # Leverage API patterns and complex system indicators
+            api_usage = meta.get("api_usage", [])
+            if isinstance(api_usage, list):
+                # Multiple API types indicate complex integration
+                if len(api_usage) >= 2:
+                    intent_score += 6.0
+                elif api_usage:
+                    intent_score += 3.0
+            # NEW: Boost based on design pattern sophistication
+            design_patterns = meta.get("design_patterns", [])
+            if isinstance(design_patterns, list) and len(design_patterns) >= 2:
+                intent_score += 4.0
+        
+        # Continue with existing logic...
+        return intent_score
+
+
+    def _apply_fallback_scoring(self, meta: dict) -> float:
+        """
+        Apply fallback scoring for unknown intents.
+        
+        Args:
+            meta: Document metadata dictionary
+            
+        Returns:
+            float: Fallback score based on general relevance indicators
+        """
+        fallback_score = 1.0
+        
+        # Boost documents with rich metadata
+        if meta.get("function_names"):
+            fallback_score += 1.0
+        if meta.get("class_names"):
+            fallback_score += 1.0
+            
+        return fallback_score
