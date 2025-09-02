@@ -1,0 +1,34 @@
+{
+  "langchain_retriever": {
+    "name": "langchain_retriever", 
+    "enabled": true,
+    "minVersion": "0.1.1",
+    "description": "Use LangChain MultiQueryRetriever for enhanced document retrieval",
+    "owner": "rag_team",
+    "rollout_date": "2025-09-01"
+  },
+  "langgraph_pipeline": {
+    "name": "langgraph_pipeline",
+    "enabled": true, 
+    "minVersion": "0.1.2",
+    "description": "LangGraph-based query processing pipeline with retry logic",
+    "owner": "pipeline_team",
+    "rollout_date": "2025-09-15"
+  },
+  "deepeval_validator": {
+    "name": "deepeval_validator",
+    "enabled": true,
+    "minVersion": "0.1.1", 
+    "description": "DEEPEval-based answer quality validation and scoring",
+    "owner": "quality_team",
+    "rollout_date": "2025-09-08"
+  },
+  "enhanced_feedback": {
+    "name": "enhanced_feedback",
+    "enabled": true,
+    "minVersion": "0.1.1",
+    "description": "Structured feedback collection with LangChain Feedback objects",
+    "owner": "feedback_team", 
+    "rollout_date": "2025-09-10"
+  }
+}
