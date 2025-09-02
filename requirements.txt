@@ -9,3 +9,6 @@ streamlit
 torch
 python-dotenv
 requests>=2.31.0
+langchain>=0.1.0
+langchain-community>=0.0.20  
+packaging>=21.0
