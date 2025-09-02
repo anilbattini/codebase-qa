@@ -33,83 +33,122 @@ class ChatHandler:
 
     def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):
         """
-        Enhanced query processing with Phase 3 context.
-        Returns: (answer, reranked_docs, impact_files, metadata)
+        Enhanced query processing with comprehensive feature toggle logging.
+        Tracks every decision and feature usage throughout the pipeline.
         """
         log_highlight("ChatHandler.process_query")
+        
+        # Initialize comprehensive query tracking
+        query_start_time = datetime.now()
         st.session_state.setdefault("thinking_logs", [])
+        
+        # 📊 QUERY START LOGGING
+        log_to_sublog(self.project_dir, "preparing_full_context.log",
+            f"\n{'='*80}\n🚀 QUERY PROCESSING START: {query_start_time.isoformat()}\n"
+            f"Query: {query}\nDebug Mode: {debug_mode}\n{'='*80}")
+        
+        log_to_sublog(self.project_dir, "toggle_info.log",
+            f"QUERY_START: {query_start_time.isoformat()} - Query: '{query[:100]}...' "
+            f"Debug: {debug_mode}")
+        
         st.session_state.thinking_logs.append("🧠 Starting enhanced query processing...")
         update_logs(log_placeholder)
-        log_to_sublog(self.project_dir, "chat_handler.log", f"Starting query processing: {query}")
-        log_to_sublog(self.project_dir, "preparing_full_context.log", 
-                        f"Starting query processing: {query}")
 
         try:
-            # Phase 1: Intent
+            # Phase 1: Intent Classification
             intent, confidence = self.query_intent_classifier.classify_intent(query)
+            
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"🎯 PHASE 1: Intent Classification\n"
+                f"   Intent: {intent}\n   Confidence: {confidence:.2f}")
+            
             st.session_state.thinking_logs.append(f"🎯 Detected intent: {intent} (confidence: {confidence:.2f})")
             update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
-            log_to_sublog(self.project_dir, "preparing_full_context.log", f"Intent classification: {intent} (confidence: {confidence:.2f})")
+            
             if debug_mode:
                 st.info(f"🎯 **Query Intent**: {intent} (confidence: {confidence:.2f})")
 
-            # Optional bypass
+            # 🎛️ FEATURE TOGGLE: RAG Bypass Check
             disable_rag = st.session_state.get("disable_rag", False)
             if disable_rag:
+                log_to_sublog(self.project_dir, "preparing_full_context.log",
+                    "⚙️ RAG BYPASS: Sending query directly to LLM")
+                log_to_sublog(self.project_dir, "toggle_info.log",
+                    "FEATURE_BYPASS: rag_disabled - Direct LLM query")
+                
                 st.session_state.thinking_logs.append("⚙️ RAG is disabled – sending query directly to LLM.")
                 update_logs(log_placeholder)
-                log_to_sublog(self.project_dir, "chat_handler.log", "RAG disabled - sending query directly to LLM")
+                
                 result = self.llm.invoke(f"User question: {query}")
                 answer = getattr(result, "content", str(result))
                 return answer, [], [], {"intent": intent, "confidence": confidence}
 
-            # Phase 2: Rewriting (local Ollama)
-            rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Query rewritten: '{query}' -> '{rewritten}'")
-            log_to_sublog(self.project_dir, "preparing_full_context.log", f"Query rewritten: '{query}' -> '{rewritten}'")
-
-            # Phase 3: Impact analysis
+            # Phase 2: Query Rewriting  
+            retriever = st.session_state.get("retriever")
+            retriever_type = type(retriever).__name__
+            
+            if retriever_type == "MultiQueryRetriever":
+                # Enhanced retriever handles rewriting internally
+                rewritten = query  # No additional rewriting needed
+                log_to_sublog(self.project_dir, "preparing_full_context.log",
+                    f"📝 PHASE 2: Skipping rewriting (Enhanced retriever will handle)")
+            else:
+                # Legacy retriever needs explicit rewriting
+                rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
+                log_to_sublog(self.project_dir, "preparing_full_context.log",
+                    f"📝 PHASE 2: Query Rewriting\n"
+                    f"   Original: {query}\n   Rewritten: {rewritten}")
+            
+            # Phase 3: Impact Analysis
             impact_files, impact_context = self._analyze_impact_with_intent(query, intent, log_placeholder)
-            if impact_files:
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Impact analysis: {len(impact_files)} files affected")
-                log_to_sublog(self.project_dir, "preparing_full_context.log", f"Impact analysis: {len(impact_files)} files affected")
+            
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"🔍 PHASE 3: Impact Analysis\n"
+                f"   Impact Files: {len(impact_files)}\n   Files: {impact_files[:5]}")
 
-            # Phase 4: Retrieval (existing retriever)
+            # Phase 4: Document Retrieval
             st.session_state.thinking_logs.append("📖 Performing intelligent document retrieval...")
             update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", "Starting document retrieval...")
-            log_to_sublog(self.project_dir, "preparing_full_context.log", "Starting document retrieval...")
+            
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"📖 PHASE 4: Document Retrieval\n   Starting retrieval process...")
 
             retriever = st.session_state.get("retriever")
             if not retriever:
-                st.error("❌ No retriever found. Please rebuild the RAG index before querying.")
-                log_to_sublog(self.project_dir, "chat_handler.log", "ERROR: No retriever found")
-                return "Please rebuild the RAG index before querying.", [], [], {}
+                error_msg = "No retriever found. Please rebuild the RAG index before querying."
+                log_to_sublog(self.project_dir, "preparing_full_context.log", f"❌ ERROR: {error_msg}")
+                st.error(f"❌ {error_msg}")
+                return error_msg, [], [], {}
+
+            # 🎛️ FEATURE TOGGLE: Enhanced Retrieval Logging
+            retriever_type = type(retriever).__name__
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"🔍 Using Retriever Type: {retriever_type}")
+            log_to_sublog(self.project_dir, "toggle_info.log",
+                f"RETRIEVAL_METHOD: {retriever_type} - Processing query: '{query[:50]}...'")
 
             retrieved_docs = self._retrieve_with_fallback(retriever, query, rewritten, log_placeholder)
+            
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"✅ Retrieved {len(retrieved_docs)} documents")
+
             if debug_mode:
                 st.info(f"📊 Retrieved {len(retrieved_docs)} chunks")
 
-            # Phase 5: Build enhanced context with FULL content
-            st.session_state.thinking_logs.append("🔧 Building enhanced context...")
-            update_logs(log_placeholder)
-            
-            # Rerank and metadata
+            # Phase 5: Context Building and Answer Generation
             source_documents = retrieved_docs
-            if source_documents:
-                reranked_docs = self.query_intent_classifier.rerank_docs_by_intent(source_documents, query, intent)
-                log_to_sublog(self.project_dir, "chat_handler.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
-                log_to_sublog(self.project_dir, "preparing_full_context.log", f"Documents reranked by intent: {len(reranked_docs)} documents")
-
             
-            if reranked_docs:
-                # 🔧 FIX: Use full context method instead of truncated
-                formatted_context = self.context_builder.create_full_context(reranked_docs)
+            if source_documents:
+                # Document reranking
+                reranked_docs = self.query_intent_classifier.rerank_docs_by_intent(source_documents, query, intent)
                 
-                # Log context quality
-                log_to_sublog(self.project_dir, "chat_handler.log", 
-                            f"Full context: {len(formatted_context)} characters from {len(reranked_docs)} documents")
+                log_to_sublog(self.project_dir, "preparing_full_context.log",
+                    f"📊 PHASE 5: Context Building\n"
+                    f"   Original docs: {len(source_documents)}\n"
+                    f"   Reranked docs: {len(reranked_docs)}")
+
+                # Enhanced context creation
+                formatted_context = self.context_builder.create_full_context(reranked_docs)
                 
                 # Try enhanced context building if available
                 if hasattr(self, 'context_builder') and self.context_builder:
@@ -117,60 +156,64 @@ class ChatHandler:
                         enhanced_context = self.context_builder.build_enhanced_context(reranked_docs, query, intent)
                         if enhanced_context and len(enhanced_context) > len(formatted_context):
                             formatted_context = enhanced_context
-                            log_to_sublog(self.project_dir, "chat_handler.log", "Using enhanced context builder")
+                            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                                "✨ Using enhanced context builder")
                     except Exception as e:
-                        log_to_sublog(self.project_dir, "chat_handler.log", f"Enhanced context failed: {e}")
+                        log_to_sublog(self.project_dir, "preparing_full_context.log", 
+                            f"⚠️ Enhanced context failed: {e}")
             else:
+                reranked_docs = []
                 formatted_context = "No relevant documentation found for this query."
+                
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"📄 Final context length: {len(formatted_context)} characters")
 
-
-            # Phase 6: Generate final answer with provider-specific prompt handling
+            # Phase 6: Answer Generation
             st.session_state.thinking_logs.append("🤖 Generating answer...")
             update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", "Generating final answer...")
             
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"🤖 PHASE 6: Answer Generation\n   Using provider: {self.provider}")
+
             router = PromptRouter()
-
-            # assume `detail_level` comes from a UI dropdown (default 'moderate')
-
             detail_level = st.session_state.get("detail_level", "moderate")
+            
             sys_or_single, user_part = router.build_enhanced_query(
                 query=query,
-                rewritten=rewritten,
+                rewritten=rewritten, 
                 intent=intent,
                 context=formatted_context,
-                # detail_level="moderate",          # <-- NEW
-                # detail_level="elaborate",          # <-- NEW
-                detail_level=detail_level,          # <-- NEW
+                detail_level=detail_level,
                 provider=self.provider,
                 llm=self.llm,
             )
 
-            if user_part:          # cloud
+            if user_part:  # Cloud provider
                 result = self.llm.invoke_with_system_user(sys_or_single, user_part)
-            else:                  # local
+            else:  # Local provider
                 result = self.llm.invoke(sys_or_single)
 
-            log_to_sublog(self.project_dir, "preparing_full_context.log", f"\n\nTotal response from {self.provider}LLM: {result}")
             answer = getattr(result, "content", str(result))
-
-            st.session_state.thinking_logs.append("✅ Answer generated successfully!")
-            update_logs(log_placeholder)
-            log_to_sublog(self.project_dir, "chat_handler.log", "Query processing completed successfully")
-            log_to_sublog(self.project_dir, "chat_handler.log", f"final context request:\n{formatted_context} \nResponse: {answer}")
-
-            metadata = {
+            
+            # 🎛️ FEATURE TOGGLE: Answer Validation
+            answer_metadata = {
                 "intent": intent,
                 "confidence": confidence,
                 "rewritten_query": rewritten,
-                "enhanced_query": None,  # superseded by structured prompt
+                "enhanced_query": None,
                 "phase_3_enabled": True,
             }
-            return answer, reranked_docs, impact_files, metadata
+            
 
         except Exception as e:
+            error_time = datetime.now()
+            log_to_sublog(self.project_dir, "preparing_full_context.log",
+                f"\n❌ QUERY PROCESSING ERROR: {error_time.isoformat()}\n"
+                f"Error: {str(e)}\nQuery: {query}\n{'='*80}\n")
+            log_to_sublog(self.project_dir, "toggle_info.log", 
+                f"QUERY_ERROR: {str(e)}")
+                
             st.error(f"❌ Error processing query: {e}")
-            log_to_sublog(self.project_dir, "chat_handler.log", f"Error processing query: {e}")
             return f"Sorry, I encountered an error while processing your query: {e}", [], [], {}
 
 

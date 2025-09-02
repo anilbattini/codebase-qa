@@ -6,10 +6,11 @@ from langchain.chains import RetrievalQA
 from config.config import ProjectConfig
 from config.model_config import model_config
 from logger import log_highlight, log_to_sublog
-from build_rag import build_rag
+from build_rag import build_rag, create_enhanced_retriever
 from chat_handler import ChatHandler
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
+from feature_toggle.feature_toggle_manager import FeatureToggleManager
 
 class RagManager:
     """
@@ -217,8 +218,6 @@ class RagManager:
         log_highlight("RagManager.load_existing_rag_index")
         
         try:
-            
-            
             # Get project configuration
             project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
             db_dir = project_config.get_db_dir()
@@ -255,15 +254,29 @@ class RagManager:
                 embedding_function=embeddings
             )
             
-            # Create retriever
-            retriever = vectorstore.as_retriever(
-                search_type="similarity",
-                search_kwargs={"k": 15}  # Increased for better retrieval
-            )
+            # Create retriever with feature toggle support
+            project_dir_for_toggle = project_dir if project_dir else "."
+            
+            if FeatureToggleManager.is_enabled("langchain_retriever", project_dir_for_toggle):
+                enhanced_retriever = create_enhanced_retriever(vectorstore, project_dir)
+                if enhanced_retriever:
+                    retriever = enhanced_retriever
+                else:
+                    # Legacy fallback
+                    log_to_sublog(project_dir, "preparing_full_context.log",
+                    "🏠 Using legacy Chroma retriever")
+                retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+            else:
+                # Legacy fallback
+                log_to_sublog(project_dir, "preparing_full_context.log",
+                    "🏠 Using legacy Chroma retriever")
+                retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 15})
             
             st.session_state["retriever"] = retriever
             st.session_state["project_dir_used"] = project_dir
-            log_to_sublog(project_dir, "rag_manager.log", f"Loaded existing RAG index from: {db_dir} with embedding model: {embedding_model}")
+            
+            log_to_sublog(project_dir, "rag_manager.log", 
+                f"Loaded existing RAG index from: {db_dir} with embedding model: {embedding_model}")
             
             # Setup LLM
             llm = model_config.get_llm()

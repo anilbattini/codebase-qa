@@ -20,6 +20,7 @@ from hierarchical_indexer import HierarchicalIndexer
 from cross_reference_builder import CrossReferenceBuilder
 
 from logger import setup_global_logger, log_to_sublog, log_highlight
+from feature_toggle.feature_toggle_manager import FeatureToggleManager
 
 def chunk_fingerprint(chunk: str) -> str:
     import hashlib
@@ -103,6 +104,61 @@ def build_code_relationship_map(documents: List[Document]) -> Dict[str, set]:
             elif isinstance(deps, str):
                 code_relationship_map.setdefault(file, set()).add(deps)
     return code_relationship_map
+
+# In build_rag.py - Enhanced retriever section with robust error handling
+
+def create_enhanced_retriever(vectorstore, project_dir):
+    """
+    Create LangChain MultiQueryRetriever with comprehensive error handling.
+    Falls back to legacy on any failure.
+    """
+    log_to_sublog(project_dir, "preparing_full_context.log",
+        "🔄 Attempting to create LangChain MultiQueryRetriever...")
+    
+    try:
+        from langchain.retrievers.multi_query import MultiQueryRetriever
+        from core.config.model_config import model_config
+        
+        # Get local rewrite LLM
+        query_llm = model_config.get_rewrite_llm()
+        # Use your existing, proven rewrite chain
+        rewrite_chain = model_config.create_rewrite_chain(query_llm)
+        
+        log_to_sublog(project_dir, "preparing_full_context.log",
+            "✅ Using existing ChatHandler rewrite chain")
+        
+        # Create base retriever
+        base_retriever = vectorstore.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 15}
+        )
+        
+        # Create MultiQueryRetriever with your chain
+        # Generate only 2 rewrite queries instead of 5
+        enhanced_retriever = MultiQueryRetriever(
+            retriever=base_retriever,
+            llm_chain=rewrite_chain,
+            max_queries=2,  # ← Controls number of rewrite calls
+            verbose=True
+        )
+        
+        # Test with a simple query
+        test_docs = enhanced_retriever.get_relevant_documents("configuration settings")
+        
+        log_to_sublog(project_dir, "preparing_full_context.log",
+            f"✅ Enhanced retriever test successful: {len(test_docs)} docs")
+        
+        log_to_sublog(project_dir, "toggle_info.log",
+            "FEATURE_USED: langchain_retriever - MultiQueryRetriever with existing rewrite chain")
+        
+        return enhanced_retriever
+        
+    except Exception as e:
+        log_to_sublog(project_dir, "preparing_full_context.log", 
+            f"❌ Enhanced retriever creation failed: {str(e)}")
+        log_to_sublog(project_dir, "toggle_info.log",
+            f"FALLBACK: langchain_retriever - Creation failed: {str(e)}")
+        return None
 
 def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, project_type=None, incremental=False, files_to_process=None):
     # Get project configuration with centralized path management
@@ -612,7 +668,7 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
         log_to_sublog(project_dir, "rag_manager.log", f"{processing_stats['errors']} files had processing errors")
     
     update_logs(log_placeholder)
-
+    
     st.success("✅ Enhanced vector database created successfully!")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -622,12 +678,23 @@ def build_rag(project_dir, ollama_model, ollama_endpoint, log_placeholder, proje
     with col3:
         st.metric("Processing Time", f"{processing_time:.1f}s")
     log_highlight("END build_rag", logger)
-    return vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={
-            "k": 15  # Increased from 10 to get more candidates
-        }
-    )
+    
+    # 🎛️ FEATURE TOGGLE: Enhanced Retriever Creation
+    project_dir_for_toggle = project_dir if project_dir else "."
+    
+    if FeatureToggleManager.is_enabled("langchain_retriever", project_dir_for_toggle):
+        enhanced_retriever = create_enhanced_retriever(vectorstore, project_dir)
+        if enhanced_retriever:
+            return enhanced_retriever
+        else:
+            log_to_sublog(project_dir, "preparing_full_context.log",
+                "🏠 Falling back to legacy retriever due to enhanced failure")
+
+    # Legacy fallback
+    log_to_sublog(project_dir, "preparing_full_context.log",
+        "🏠 Using legacy Chroma retriever")
+    return vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+        
 
 def get_impact(file_name: str, project_dir: str = None) -> List[str]:
     project_config = ProjectConfig(project_dir=project_dir)
