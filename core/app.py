@@ -191,15 +191,12 @@ if rag_manager.is_ready():
     qa_llm = model_config.get_llm()
     # Dedicated local LLM for rewriting (always Ollama)
     rewrite_llm = model_config.get_rewrite_llm()
-    rewrite_chain = model_config.create_rewrite_chain(rewrite_llm=rewrite_llm)
-
     chat_handler = ChatHandler(
         llm=qa_llm,
         provider = model_config.get_provider(),
         project_config=project_config,
         project_dir=project_dir,
-        rewrite_llm=rewrite_llm,
-        rewrite_chain=rewrite_chain
+        rewrite_llm=rewrite_llm
     )
     
     query, submitted = ui.render_chat_input()
@@ -219,7 +216,7 @@ if rag_manager.is_ready():
             with st.spinner("Thinking..."):
                 try:
                     answer, reranked_docs, impact_files, metadata = chat_handler.process_query(
-                        query, st.session_state["qa_chain"], log_placeholder, debug_mode
+                        query, st.session_state["vectorstore"], log_placeholder, debug_mode
                     )
                     if answer:
                         # Clear the processing logs and display only the clean answer

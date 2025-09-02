@@ -156,21 +156,25 @@ class ModelConfig:
         return ChatOllama(**params)
 
 
-    def create_rewrite_chain(self, rewrite_llm):
-        """🚀 FIXED: Prevent explanation contamination in rewritten queries."""
+    def create_rewrite_chain(self, rewrite_llm, intent, project_type):
+        """Enhanced rewrite chain that preserves code entities."""
         prompt = PromptTemplate(
-            input_variables=["original", "project_type", "intent"],
+            input_variables=["question"],
             template=(
-                "Convert this question into search terms for a {project_type} codebase.\n\n"
-                "Intent: {intent}\n"
-                "Question: {original}\n\n"
-                "CRITICAL: Return ONLY the search terms, nothing else.\n"
+                f"Convert this question into search terms for a {project_type} codebase.\n\n"
+                f"Intent: {intent}\n"
+                "Question: {question}\n\n"
+                "CRITICAL RULES:\n"
+                "Return ONLY the search terms, nothing else.\n"
                 "NO explanations, NO formatting, NO additional text.\n\n"
-                "Examples:\n"
+                "Example queries converted to search terms:\n"
+                "- 'Where is UserService called?' → 'UserService called usage'\n"
+                "- 'How does DatabaseManager work?' → 'DatabaseManager implementation'\n"
+                "- 'What does auth_helper.py do?' → 'auth_helper.py functionality'\n\n"
                 "- 'Where is login screen?' → 'LoginScreen composable activity'\n"
-                "- 'How does auth work?' → 'authentication login verify token'\n"
-                "- 'What does this app do?' → 'MainActivity README app purpose'\n\n"
-                "Search terms:"
+                "- 'What does UserService do?' → 'UserService purpose functionality implementation'\n"
+                "- 'Where is MainActivity defined?' → 'MainActivity class definition location file'\n"
+                "- 'How does auth work?' → 'authentication process workflow implementation'\n\n"
             ),
         )
         return prompt | rewrite_llm

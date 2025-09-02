@@ -113,8 +113,8 @@ class QualityTestSuite:
                     st.session_state = {}
                 if 'thinking_logs' not in st.session_state:
                     st.session_state.thinking_logs = []
-                if 'qa_chain' not in st.session_state:
-                    st.session_state.qa_chain = None
+                if 'vectorstore' not in st.session_state:
+                    st.session_state.vectorstore = None
             
             # Initialize RAG manager
             rag_manager = RagManager()
@@ -137,7 +137,7 @@ class QualityTestSuite:
                     pass
             
             # Build RAG index
-            retriever, qa_chain = rag_manager.build_rag_index(
+            retriever, vectorstore = rag_manager.build_rag_index(
                 self.project_dir, 
                 self.ollama_model, 
                 self.ollama_endpoint, 
@@ -151,11 +151,11 @@ class QualityTestSuite:
             results["status"] = "success"
             results["details"]["build_time"] = build_time
             results["details"]["retriever_created"] = retriever is not None
-            results["details"]["qa_chain_created"] = qa_chain is not None
+            results["details"]["vectorstore_created"] = vectorstore is not None
             
             # Store for later use
             self.retriever = retriever
-            self.qa_chain = qa_chain
+            self.vectorstore = vectorstore
             
         except Exception as e:
             results["status"] = "failed"
@@ -193,8 +193,8 @@ class QualityTestSuite:
                     st.session_state = {}
                 if 'thinking_logs' not in st.session_state:
                     st.session_state.thinking_logs = []
-                if 'qa_chain' not in st.session_state:
-                    st.session_state.qa_chain = None
+                if 'vectorstore' not in st.session_state:
+                    st.session_state.vectorstore = None
             
             # Process the question
             log_to_sublog(self.project_dir, "quality_test.log", f"Processing question: {question}")
@@ -213,13 +213,13 @@ class QualityTestSuite:
                 def __exit__(self, exc_type, exc_val, exc_tb):
                     pass
             
-            # Store qa_chain in session state for chat_handler to use
+            # Store vectorstore in session state for chat_handler to use
             if not self.is_streamlit_context:
                 import streamlit as st
-                st.session_state.qa_chain = self.qa_chain
+                st.session_state.vectorstore = self.vectorstore
             
             answer, reranked_docs, impact_files, metadata = chat_handler.process_query(
-                question, self.qa_chain, MockLogPlaceholder(), debug_mode=True
+                question, self.vectorstore, MockLogPlaceholder(), debug_mode=True
             )
             
             processing_time = time.time() - start_time

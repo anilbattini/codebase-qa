@@ -11,7 +11,7 @@ from typing import List, Dict, Any
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import log_highlight, log_to_sublog
 
-def test_retrieval(project_config, retriever, qa_chain=None):
+def test_retrieval(project_config, retriever, vectorstore=None):
     """Interactive retrieval testing interface using actual core functionality."""
     log_highlight("RetrievalTester.test_retrieval")
     
@@ -31,7 +31,7 @@ def test_retrieval(project_config, retriever, qa_chain=None):
         k_docs = st.number_input("Documents to retrieve:", min_value=1, max_value=20, value=5)
     
     if test_query and st.button("🔍 Test Retrieval"):
-        test_single_query(test_query, retriever, k_docs, project_config, qa_chain)
+        test_single_query(test_query, retriever, k_docs, project_config, vectorstore)
     
     # Predefined test suites
     st.write("**Predefined Test Suites**")
@@ -63,7 +63,7 @@ def test_retrieval(project_config, retriever, qa_chain=None):
     selected_suite = st.selectbox("Select test suite:", list(test_suites.keys()))
     
     if st.button(f"🚀 Run {selected_suite} Test Suite"):
-        run_test_suite(test_suites[selected_suite], retriever, project_config, qa_chain)
+        run_test_suite(test_suites[selected_suite], retriever, project_config, vectorstore)
     
     # Comparison testing
     st.write("**Query Comparison Testing**")
@@ -77,7 +77,7 @@ def test_retrieval(project_config, retriever, qa_chain=None):
     if query1 and query2 and st.button("⚖️ Compare Queries"):
         compare_queries(query1, query2, retriever, project_config)
 
-def test_single_query(query: str, retriever, k: int, project_config, qa_chain=None):
+def test_single_query(query: str, retriever, k: int, project_config, vectorstore=None):
     """Test a single query and display detailed results using actual retriever."""
     st.write(f"**Testing query: '{query}'**")
     
@@ -152,7 +152,7 @@ def test_single_query(query: str, retriever, k: int, project_config, qa_chain=No
         st.error(f"❌ Error testing query: {e}")
         log_to_sublog(project_config.project_dir, "debug_tools.log", f"Error testing query '{query}': {e}")
 
-def test_retrieval_results(query: str, retriever, project_config, qa_chain=None):
+def test_retrieval_results(query: str, retriever, project_config, vectorstore=None):
     """Test a single query and return results as a list of dictionaries using the existing retriever from session state."""
     try:
         log_to_sublog(project_config.project_dir, "debug_tools.log", 
@@ -204,7 +204,7 @@ def test_retrieval_results(query: str, retriever, project_config, qa_chain=None)
                      f"Error testing retrieval for query '{query}': {e}")
         return []
 
-def run_test_suite(queries: List[str], retriever, project_config, qa_chain=None):
+def run_test_suite(queries: List[str], retriever, project_config, vectorstore=None):
     """Run a test suite with multiple queries and display results."""
     st.write(f"**Running test suite with {len(queries)} queries**")
     

@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from typing import List
 import streamlit as st
 import re
@@ -8,7 +9,7 @@ from context_builder import ContextBuilder
 from prompt_router import PromptRouter
 from query_intent_classifier import QueryIntentClassifier
 from logger import log_highlight, log_to_sublog
-from feature_toggle.feature_toggle_manager import FeatureToggleManager
+from config.feature_toggle_manager import FeatureToggleManager
 
 class ChatHandler:
     """
@@ -17,21 +18,115 @@ class ChatHandler:
     🆕 Now with Phase 3 enhanced context capabilities.
     """
 
-    def __init__(self, llm, provider, project_config, project_dir=".", rewrite_llm=None, rewrite_chain=None):
+    def __init__(self, llm, provider, project_config, project_dir=".", rewrite_llm=None):
         self.project_dir = project_dir
         self.llm = llm
         self.project_config = project_config
         self.provider = provider
-
         self.rewrite_llm = rewrite_llm if rewrite_llm is not None else llm
-            
-        self.rewrite_chain = rewrite_chain
-        
         self.context_builder = ContextBuilder(project_config, project_dir=project_dir)
         self.query_intent_classifier = QueryIntentClassifier(project_config)
 
+    def _create_enhanced_retriever(self, base_retriever, project_dir, rewrite_chain):
+        """Fixed MultiQueryRetriever - access LLM correctly from RunnableSequence."""
+        try:
+            from langchain.retrievers.multi_query import MultiQueryRetriever
+            from langchain.prompts import PromptTemplate
+            from langchain.schema import BaseOutputParser
+            from langchain.chains import LLMChain
+            
+            
+            # # Extract LLM from RunnableSequence correctly
+            # if hasattr(rewrite_chain, 'last'):
+            #     # RunnableSequence: get the LLM from the chain
+            #     llm = rewrite_chain.last
+            #     prompt = rewrite_chain.first
+            #     log_to_sublog(project_dir, "preparing_full_context.log",
+            #     f"✅ hasattr rewrite_chain last")
+            # elif hasattr(rewrite_chain, 'steps') and len(rewrite_chain.steps) > 0:
+            #     # Alternative: get from steps
+            #     llm = rewrite_chain.steps[-1]
+            #     prompt = rewrite_chain.steps[-0]
+            #     log_to_sublog(project_dir, "preparing_full_context.log",
+            #     f"✅ hasattr rewrite_chain steps")
+            # else:
+            #     # Fallback: use rewrite_llm directly
+            #     llm = self.rewrite_llm
+            #     log_to_sublog(project_dir, "preparing_full_context.log",
+            #     f"✅ default rewrit_llm for MultiQueryRetriever")
+            
+            # Create output parser
+            class QueryListParser(BaseOutputParser):
+                def parse(self, text: str) -> list:
+                    if isinstance(text, str):
+                        content = text.strip()
+                    elif hasattr(text, 'content'):
+                        content = text.content.strip()
+                    else:
+                        content = str(text).strip()
+                    
+                    # Split and clean
+                    lines = [line.strip().strip("'\"") for line in content.split('\n') if line.strip()]
+                    queries = []
+                    for line in lines:
+                        clean_line = re.sub(r'^[\d\.\-\*\+:\s]+', '', line).strip()
+                        if len(clean_line) > 3:
+                            queries.append(clean_line)
+                    
+                    return queries[:2] if queries else ["search terms"]
+            
+             # Simple prompt for MultiQueryRetriever
+            multi_qa_prompt = PromptTemplate(
+                input_variables=["question"],
+                template="Generate 2 search variations for: {question}\nEach on new line:"
+            )
+            
+            # Create LLM chain with parser
+            llm_chain = LLMChain(
+                prompt=rewrite_chain.first,
+                llm=rewrite_chain.last,  # Use extracted LLM
+                output_parser=QueryListParser()
+            )
+            
+            # Create MultiQueryRetriever
+            enhanced_retriever = MultiQueryRetriever(
+                retriever=base_retriever,
+                llm_chain=llm_chain,
+                max_queries=2
+            )
+            
+            # Test it
+            test_docs = enhanced_retriever.get_relevant_documents("test query")
+            log_to_sublog(project_dir, "preparing_full_context.log",
+                f"✅ Enhanced retriever working: {len(test_docs)} docs")
+            
+            return enhanced_retriever
+            
+        except Exception as e:
+            log_to_sublog(project_dir, "preparing_full_context.log", 
+                f"❌ Enhanced retriever failed: {e}")
+            return None
 
-    def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):
+    
+    def _get_retriever(self, vectorstore, project_dir, rewrite_chain):
+            # 🎛️ FEATURE TOGGLE: Enhanced Retriever Creation
+        project_dir_for_toggle = project_dir if project_dir else "."
+        base_retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+        
+        if FeatureToggleManager.is_enabled("langchain_retriever", project_dir_for_toggle):
+            enhanced_retriever = self._create_enhanced_retriever(base_retriever, project_dir, rewrite_chain)
+            if enhanced_retriever:
+                return enhanced_retriever
+            else:
+                log_to_sublog(project_dir, "preparing_full_context.log",
+                    "🏠 Falling back to legacy retriever due to enhanced failure")
+
+        # Legacy fallback
+        log_to_sublog(project_dir, "preparing_full_context.log",
+            "🏠 Using legacy Chroma retriever")
+        return base_retriever
+
+    def process_query(self, query, vectorstore, log_placeholder, debug_mode=False):
         """
         Enhanced query processing with comprehensive feature toggle logging.
         Tracks every decision and feature usage throughout the pipeline.
@@ -84,7 +179,15 @@ class ChatHandler:
                 return answer, [], [], {"intent": intent, "confidence": confidence}
 
             # Phase 2: Query Rewriting  
-            retriever = st.session_state.get("retriever")
+            vectorstore = st.session_state.get("vectorstore")
+            project_type = self.project_config.project_type.upper()
+            
+            from config.model_config import model_config
+            rewrite_chain = model_config.create_rewrite_chain(self.rewrite_llm, intent, project_type)
+            retriever = self._get_retriever(vectorstore, self.project_dir, rewrite_chain)
+            if retriever:
+                st.session_state["retriever"] = retriever
+                
             retriever_type = type(retriever).__name__
             
             if retriever_type == "MultiQueryRetriever":
@@ -94,7 +197,7 @@ class ChatHandler:
                     f"📝 PHASE 2: Skipping rewriting (Enhanced retriever will handle)")
             else:
                 # Legacy retriever needs explicit rewriting
-                rewritten = self._rewrite_query_with_intent(query, intent, log_placeholder, debug_mode)
+                rewritten = self._rewrite_query_with_intent(query, intent, rewrite_chain, log_placeholder, debug_mode)
                 log_to_sublog(self.project_dir, "preparing_full_context.log",
                     f"📝 PHASE 2: Query Rewriting\n"
                     f"   Original: {query}\n   Rewritten: {rewritten}")
@@ -193,9 +296,9 @@ class ChatHandler:
             else:  # Local provider
                 result = self.llm.invoke(sys_or_single)
 
+            # Get final answer
             answer = getattr(result, "content", str(result))
-            
-            # 🎛️ FEATURE TOGGLE: Answer Validation
+
             answer_metadata = {
                 "intent": intent,
                 "confidence": confidence,

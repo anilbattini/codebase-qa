@@ -28,7 +28,7 @@ def test_session_state_initialization():
         rag_manager.initialize_session_state()
         
         # Check that all required session state variables are initialized
-        required_vars = ["retriever", "project_dir_used", "thinking_logs", "qa_chain", "chat_history"]
+        required_vars = ["retriever", "project_dir_used", "thinking_logs", "vectorstore", "chat_history"]
         
         for var in required_vars:
             if var not in st.session_state:

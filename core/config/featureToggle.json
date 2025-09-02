@@ -16,12 +16,18 @@
     "rollout_date": "2025-09-15"
   },
   "deepeval_validator": {
-    "name": "deepeval_validator",
     "enabled": true,
-    "minVersion": "0.1.1", 
+    "minVersion": "0.1.1",
     "description": "DEEPEval-based answer quality validation and scoring",
     "owner": "quality_team",
-    "rollout_date": "2025-09-08"
+    "rollout_date": "2025-09-02",
+    "config": {
+      "relevancy_threshold": 0.7,
+      "faithfulness_threshold": 0.7,
+      "contextual_threshold": 0.7,
+      "overall_threshold": 0.6,
+      "enable_warnings": true
+    }
   },
   "enhanced_feedback": {
     "name": "enhanced_feedback",
@@ -30,5 +36,26 @@
     "description": "Structured feedback collection with LangChain Feedback objects",
     "owner": "feedback_team", 
     "rollout_date": "2025-09-10"
+  },
+  "pipeline_diagnostics": {
+    "enabled": true,
+    "minVersion": "0.2.6",
+    "description": "Comprehensive pipeline quality diagnostics and adaptive fixes",
+    "config": {
+      "entity_preservation_threshold": 0.7,
+      "retrieval_coverage_threshold": 0.6,
+      "enable_adaptive_retrieval": true,
+      "max_fallback_docs": 30
+    }
+  },
+  "quality_retry_system": {
+    "enabled": false,
+    "minVersion": "0.2.6", 
+    "description": "Automatic answer retry when quality scores are low",
+    "config": {
+      "quality_threshold": 0.6,
+      "max_attempts": 3,
+      "retry_strategies": ["detailed_prompt", "enhanced_retrieval", "alternative_llm"]
+    }
   }
 }

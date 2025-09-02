@@ -338,7 +338,7 @@ class UIComponents:
             
             # Clear session state for new project type
             st.session_state.selected_project_type = new_type
-            for key in ['retriever', 'qa_chain', 'project_dir_used', 'chat_history']:
+            for key in ['retriever', 'vectorstore', 'project_dir_used', 'chat_history']:
                 if key in st.session_state:
                     del st.session_state[key]
             
@@ -420,7 +420,7 @@ class UIComponents:
                 "📝 Your question",
                 placeholder="What does the project do?",
                 key="query_input",
-                disabled=not st.session_state.get("qa_chain")
+                disabled=not st.session_state.get("vectorstore")
             )
             submitted = st.form_submit_button("🚀 Ask")
         return query, submitted

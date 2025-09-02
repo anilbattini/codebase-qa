@@ -276,7 +276,7 @@ debug_tools/
 ### Working System Indicators
 ✅ **RAG System Ready**:
 - `st.session_state.get("retriever")` exists
-- `st.session_state.get("qa_chain")` exists
+- `st.session_state.get("vectorstore")` exists
 - No embedding dimension errors
 
 ✅ **Debug Tools Working**:

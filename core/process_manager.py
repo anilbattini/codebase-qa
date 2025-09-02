@@ -119,7 +119,7 @@ class ProcessManager:
                 
                 # Clear existing RAG state to force rebuild
                 cleared_keys = []
-                for key in ['retriever', 'qa_chain', 'project_dir_used']:
+                for key in ['retriever', 'vectorstore', 'project_dir_used']:
                     if key in st.session_state:
                         del st.session_state[key]
                         cleared_keys.append(key)

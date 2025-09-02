@@ -267,7 +267,7 @@ class UITests:
             rag_manager.initialize_session_state()
             
             # Test QA chain creation by building RAG index
-            # Note: RagManager doesn't have create_qa_chain method, so we'll test the build process
+            # Note: RagManager doesn't have create_vectorstore method, so we'll test the build process
             try:
                 # Test that we can initialize the RAG manager
                 rag_manager.initialize_session_state()
@@ -277,15 +277,15 @@ class UITests:
                 llm = rag_manager.setup_llm(config["ollama_model"], config["ollama_endpoint"])
                 result["details"]["llm_setup"] = llm is not None
                 
-                result["details"]["qa_chain_created"] = True  # Simplified test
+                result["details"]["vectorstore_created"] = True  # Simplified test
             except Exception as e:
-                result["details"]["qa_chain_created"] = False
+                result["details"]["vectorstore_created"] = False
                 result["details"]["setup_error"] = str(e)
             
-            # Test chat response (simplified since we don't have actual qa_chain)
+            # Test chat response (simplified since we don't have actual vectorstore)
             result["details"]["chat_response"] = True  # Simplified test
             
-            if result["details"]["qa_chain_created"]:
+            if result["details"]["vectorstore_created"]:
                 print("✅ Chat functionality working")
                 result["status"] = "success"
             else:
@@ -323,7 +323,7 @@ class UITests:
                 "rag_building_in_progress", 
                 "rag_build_start_time",
                 "retriever",
-                "qa_chain"
+                "vectorstore"
             ]
             
             initialized_vars = []

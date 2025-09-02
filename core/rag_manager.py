@@ -2,15 +2,12 @@ import os
 import shutil
 import streamlit as st
 from langchain_ollama import ChatOllama
-from langchain.chains import RetrievalQA
 from config.config import ProjectConfig
 from config.model_config import model_config
 from logger import log_highlight, log_to_sublog
-from build_rag import build_rag, create_enhanced_retriever
-from chat_handler import ChatHandler
+from build_rag import build_rag
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
-from feature_toggle.feature_toggle_manager import FeatureToggleManager
 
 class RagManager:
     """
@@ -21,14 +18,14 @@ class RagManager:
     def __init__(self):
         self.llm = None
         self.retriever = None
-        self.qa_chain = None
+        self.vectorstore = None
     
     def initialize_session_state(self):
         """Initialize Streamlit session state variables."""
         st.session_state.setdefault("retriever", None)
         st.session_state.setdefault("project_dir_used", None)
         st.session_state.setdefault("thinking_logs", [])
-        st.session_state.setdefault("qa_chain", None)
+        st.session_state.setdefault("vectorstore", None)
         st.session_state.setdefault("chat_history", [])
     
     def setup_llm(self, ollama_model=None, ollama_endpoint=None):
@@ -112,7 +109,7 @@ class RagManager:
                             raise e
             
             # Clear session state
-            session_keys_to_clear = ["retriever", "qa_chain", "project_dir_used", "thinking_logs"]
+            session_keys_to_clear = ["retriever", "vectorstore", "project_dir_used", "thinking_logs"]
             for key in session_keys_to_clear:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -120,7 +117,7 @@ class RagManager:
             
             # Reset instance variables
             self.retriever = None
-            self.qa_chain = None
+            self.vectorstore = None
             self.llm = None
             
             # Add a small delay to ensure file system operations complete
@@ -175,7 +172,7 @@ class RagManager:
         with st.spinner("🔄 Building RAG index..."):
             if incremental and files_to_process:
                 log_to_sublog(project_dir, "rag_manager.log", f"Incremental rebuild: processing {len(files_to_process)} changed files")
-                retriever = build_rag(
+                vectorstore = build_rag(
                     project_dir=project_dir,
                     ollama_model=ollama_model,
                     ollama_endpoint=ollama_endpoint,
@@ -186,7 +183,7 @@ class RagManager:
                 )
             else:
                 log_to_sublog(project_dir, "rag_manager.log", "Full rebuild: processing all files")
-                retriever = build_rag(
+                vectorstore = build_rag(
                     project_dir=project_dir,
                     ollama_model=ollama_model,
                     ollama_endpoint=ollama_endpoint,
@@ -194,24 +191,10 @@ class RagManager:
                     project_type=project_type
                 )
             
-            st.session_state["retriever"] = retriever
+            st.session_state["vectorstore"] = vectorstore
             st.session_state["project_dir_used"] = project_dir
             log_to_sublog(project_dir, "rag_manager.log", f"RAG index built for project: {project_dir}")
-            
-            # Setup LLM first
-            llm = model_config.get_llm()
-            log_to_sublog(project_dir, "rag_manager.log", f"LLM setup: {ollama_model} at {ollama_endpoint}")
-            
-            # Setup QA chain
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                retriever=retriever,
-                return_source_documents=True
-            )
-            st.session_state["qa_chain"] = qa_chain
-            log_to_sublog(project_dir, "rag_manager.log", "QA chain created successfully")
-            
-            return retriever, qa_chain
+    
     
     def load_existing_rag_index(self, project_dir, ollama_model, ollama_endpoint, project_type):
         """Load existing RAG index without rebuilding."""
@@ -254,44 +237,9 @@ class RagManager:
                 embedding_function=embeddings
             )
             
-            # Create retriever with feature toggle support
-            project_dir_for_toggle = project_dir if project_dir else "."
-            
-            if FeatureToggleManager.is_enabled("langchain_retriever", project_dir_for_toggle):
-                enhanced_retriever = create_enhanced_retriever(vectorstore, project_dir)
-                if enhanced_retriever:
-                    retriever = enhanced_retriever
-                else:
-                    # Legacy fallback
-                    log_to_sublog(project_dir, "preparing_full_context.log",
-                    "🏠 Using legacy Chroma retriever")
-                retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 15})
-            else:
-                # Legacy fallback
-                log_to_sublog(project_dir, "preparing_full_context.log",
-                    "🏠 Using legacy Chroma retriever")
-                retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 15})
-            
-            st.session_state["retriever"] = retriever
+            st.session_state["vectorstore"] = vectorstore
             st.session_state["project_dir_used"] = project_dir
-            
-            log_to_sublog(project_dir, "rag_manager.log", 
-                f"Loaded existing RAG index from: {db_dir} with embedding model: {embedding_model}")
-            
-            # Setup LLM
-            llm = model_config.get_llm()
-            log_to_sublog(project_dir, "rag_manager.log", f"LLM setup: {ollama_model} at {ollama_endpoint}")
-            
-            # Setup QA chain
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                retriever=retriever,
-                return_source_documents=True
-            )
-            st.session_state["qa_chain"] = qa_chain
-            log_to_sublog(project_dir, "rag_manager.log", "QA chain loaded successfully")
-            
-            return retriever, qa_chain
+            log_to_sublog(project_dir, "rag_manager.log", f"Loaded existing RAG index built for: {project_dir}")
             
         except Exception as e:
             log_to_sublog(project_dir, "rag_manager.log", f"Failed to load existing RAG index: {e}")
@@ -303,13 +251,13 @@ class RagManager:
     
     def is_ready(self):
         """Check if RAG system is ready for queries."""
-        return st.session_state.get("qa_chain") is not None
+        return st.session_state.get("vectorstore") is not None
 
     def reset(self):
         """Reset/restart all resources for a new session—used in tests or after rebuild."""
         log_highlight("RagManager.reset")
         self.retriever = None
-        self.qa_chain = None
+        self.vectorstore = None
         # Can extend to clean stateful logs or diagnostics here
 
 # --------------- CODE CHANGE SUMMARY ---------------
