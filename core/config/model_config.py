@@ -10,6 +10,7 @@ import os
 from typing import Dict, Any, Optional
 
 from custom_llm_client import CustomLLMClient
+from langchain.prompts import PromptTemplate
 from logger import log_highlight
 
 class ModelConfig:
@@ -131,7 +132,6 @@ class ModelConfig:
             raise ValueError(f"Unsupported provider: {provider}")
 
 
-    
     def get_rewrite_llm(self, **overrides):
         """
         Get LLM specifically for query rewriting.
@@ -155,6 +155,25 @@ class ModelConfig:
         log_highlight(f"ModelConfig: Creating Rewrite LLM (Ollama) - {model} at {endpoint}")
         return ChatOllama(**params)
 
+
+    def create_rewrite_chain(self, rewrite_llm):
+        """🚀 FIXED: Prevent explanation contamination in rewritten queries."""
+        prompt = PromptTemplate(
+            input_variables=["original", "project_type", "intent"],
+            template=(
+                "Convert this question into search terms for a {project_type} codebase.\n\n"
+                "Intent: {intent}\n"
+                "Question: {original}\n\n"
+                "CRITICAL: Return ONLY the search terms, nothing else.\n"
+                "NO explanations, NO formatting, NO additional text.\n\n"
+                "Examples:\n"
+                "- 'Where is login screen?' → 'LoginScreen composable activity'\n"
+                "- 'How does auth work?' → 'authentication login verify token'\n"
+                "- 'What does this app do?' → 'MainActivity README app purpose'\n\n"
+                "Search terms:"
+            ),
+        )
+        return prompt | rewrite_llm
 
 
     # Existing Ollama Model methods

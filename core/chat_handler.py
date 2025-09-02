@@ -1,13 +1,14 @@
+from datetime import datetime
 from typing import List
 import streamlit as st
 import re
 import os
-from langchain.prompts import PromptTemplate
 from build_rag import update_logs, get_impact
 from context_builder import ContextBuilder
 from prompt_router import PromptRouter
 from query_intent_classifier import QueryIntentClassifier
 from logger import log_highlight, log_to_sublog
+from feature_toggle.feature_toggle_manager import FeatureToggleManager
 
 class ChatHandler:
     """
@@ -16,7 +17,7 @@ class ChatHandler:
     🆕 Now with Phase 3 enhanced context capabilities.
     """
 
-    def __init__(self, llm, provider, project_config, project_dir=".", rewrite_llm=None):
+    def __init__(self, llm, provider, project_config, project_dir=".", rewrite_llm=None, rewrite_chain=None):
         self.project_dir = project_dir
         self.llm = llm
         self.project_config = project_config
@@ -24,31 +25,10 @@ class ChatHandler:
 
         self.rewrite_llm = rewrite_llm if rewrite_llm is not None else llm
             
-        self.rewrite_chain = self._create_rewrite_chain()
+        self.rewrite_chain = rewrite_chain
         
         self.context_builder = ContextBuilder(project_config, project_dir=project_dir)
         self.query_intent_classifier = QueryIntentClassifier(project_config)
-
-
-    # core/chat_handler.py - ENHANCED _create_rewrite_chain
-    def _create_rewrite_chain(self):
-        """🚀 FIXED: Prevent explanation contamination in rewritten queries."""
-        prompt = PromptTemplate(
-            input_variables=["original", "project_type", "intent"],
-            template=(
-                "Convert this question into search terms for a {project_type} codebase.\n\n"
-                "Intent: {intent}\n"
-                "Question: {original}\n\n"
-                "CRITICAL: Return ONLY the search terms, nothing else.\n"
-                "NO explanations, NO formatting, NO additional text.\n\n"
-                "Examples:\n"
-                "- 'Where is login screen?' → 'LoginScreen composable activity'\n"
-                "- 'How does auth work?' → 'authentication login verify token'\n"
-                "- 'What does this app do?' → 'MainActivity README app purpose'\n\n"
-                "Search terms:"
-            ),
-        )
-        return prompt | self.rewrite_llm
 
 
     def process_query(self, query, qa_chain, log_placeholder, debug_mode=False):

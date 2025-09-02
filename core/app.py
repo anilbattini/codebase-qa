@@ -191,6 +191,7 @@ if rag_manager.is_ready():
     qa_llm = model_config.get_llm()
     # Dedicated local LLM for rewriting (always Ollama)
     rewrite_llm = model_config.get_rewrite_llm()
+    rewrite_chain = model_config.create_rewrite_chain(rewrite_llm=rewrite_llm)
 
     chat_handler = ChatHandler(
         llm=qa_llm,
@@ -198,6 +199,7 @@ if rag_manager.is_ready():
         project_config=project_config,
         project_dir=project_dir,
         rewrite_llm=rewrite_llm,
+        rewrite_chain=rewrite_chain
     )
     
     query, submitted = ui.render_chat_input()
