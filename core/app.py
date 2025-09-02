@@ -7,15 +7,12 @@ from rag_manager import RagManager
 from ui_components import UIComponents
 from chat_handler import ChatHandler
 from logger import setup_global_logger, log_highlight
-from logger import move_query_log, rate_and_copy
+from logger import move_query_log
 from config.config import ProjectConfig
 from process_manager import ProcessManager
 from dotenv import load_dotenv
 
-
-
-
-# 1. Initial Setup
+# Initial Setup
 load_dotenv()
 st.cache_data.clear()
 st.cache_resource.clear()
@@ -32,12 +29,10 @@ else:
 
 rag_manager = RagManager()
 ui = UIComponents()
-
 rag_manager.initialize_session_state()
 log_highlight("app.py: Initial setup complete")
 
-
-# 2. Sidebar and Main UI Rendering
+# Sidebar and Main UI Rendering
 config_result = ui.render_sidebar_config()
 project_dir, ollama_model, ollama_endpoint, force_rebuild, debug_mode, config_complete = config_result
 
@@ -49,53 +44,44 @@ if project_dir:
     project_dir = os.path.abspath(project_dir)
     st.session_state["project_dir"] = project_dir
 
-st.session_state.setdefault("rated_logs", set())   # registry
+st.session_state.setdefault("rated_logs", set())
 
 # Add Disable RAG toggle to sidebar
 st.sidebar.markdown("## 🔧 Advanced Options")
 st.sidebar.checkbox("Disable RAG (query LLM directly)", key="disable_rag")
 
-# 🚦 ISSUE 2 FIX: Check if configuration is complete
+# Check if configuration is complete
 if not config_complete:
-    # Show appropriate welcome message based on what's missing
-    if not st.session_state.selected_project_type:
+    if not st.session_state.get("selected_project_type"):
         ui.render_welcome_screen()
         st.info("🎯 **Step 1**: Please select your project type in the sidebar to continue.")
     else:
-        ui.render_welcome_screen() 
+        ui.render_welcome_screen()
         st.info("🔧 **Step 2**: Please select a provider in the sidebar to continue.")
     st.stop()
 
 # Both project type and provider are selected - proceed with RAG logic
-project_config = rag_manager.get_project_config(st.session_state.selected_project_type)
+project_config = rag_manager.get_project_config(st.session_state.get("selected_project_type"))
 ui.render_project_info(project_config)
 ui.render_custom_css()
 
-
-# 3. RAG Index Building
-# Check if force rebuild is requested
+# RAG Index Building
 if st.session_state.get("force_rebuild"):
-    # Clear the force rebuild flag
     del st.session_state["force_rebuild"]
-    
-    # Force rebuild - clean everything and rebuild
     log_highlight("app.py: Force rebuild requested by user")
     st.info("🔄 **Force Rebuild**: User requested complete rebuild. Cleaning existing data...")
     
-    # Ensure session state is properly initialized before clearing
     rag_manager.initialize_session_state()
-    # Safely clear thinking logs
     if "thinking_logs" in st.session_state:
         st.session_state.thinking_logs.clear()
     else:
         st.session_state.setdefault("thinking_logs", [])
-    
-    # Protect the RAG build process
+
     try:
         ProcessManager.start_rag_build()
         rag_manager.build_rag_index(
-            project_dir, ollama_model, ollama_endpoint, 
-            st.session_state.selected_project_type, st.empty()
+            project_dir, ollama_model, ollama_endpoint,
+            st.session_state.get("selected_project_type"), st.empty()
         )
         ProcessManager.finish_rag_build()
         st.success("✅ RAG index rebuilt successfully!")
@@ -107,19 +93,16 @@ if st.session_state.get("force_rebuild"):
         st.exception(e)
 else:
     # Check if rebuild is needed for current project type
-    project_config = ProjectConfig(project_dir=project_dir, project_type=st.session_state.selected_project_type)
-    rebuild_info = rag_manager.should_rebuild_index(project_dir, False, st.session_state.selected_project_type)
-
+    project_config = ProjectConfig(project_dir=project_dir, project_type=st.session_state.get("selected_project_type"))
+    rebuild_info = rag_manager.should_rebuild_index(project_dir, False, st.session_state.get("selected_project_type"))
+    
     if rebuild_info["rebuild"]:
-        # Ensure session state is properly initialized before clearing
         rag_manager.initialize_session_state()
-        # Safely clear thinking logs
         if "thinking_logs" in st.session_state:
             st.session_state.thinking_logs.clear()
         else:
             st.session_state.setdefault("thinking_logs", [])
-        
-        # Determine if this is incremental or full rebuild
+
         is_incremental = rebuild_info["reason"] == "files_changed" and rebuild_info["files"]
         
         if is_incremental:
@@ -128,20 +111,19 @@ else:
         else:
             log_highlight("app.py: Starting full RAG build")
             st.info("🔄 **Full Build**: Rebuilding entire RAG index...")
-        
-        # Protect the RAG build process
+
         try:
             ProcessManager.start_rag_build()
             if is_incremental:
                 rag_manager.build_rag_index(
-                    project_dir, ollama_model, ollama_endpoint, 
-                    st.session_state.selected_project_type, st.empty(), 
+                    project_dir, ollama_model, ollama_endpoint,
+                    st.session_state.get("selected_project_type"), st.empty(),
                     incremental=True, files_to_process=rebuild_info["files"]
                 )
             else:
                 rag_manager.build_rag_index(
-                    project_dir, ollama_model, ollama_endpoint, 
-                    st.session_state.selected_project_type, st.empty()
+                    project_dir, ollama_model, ollama_endpoint,
+                    st.session_state.get("selected_project_type"), st.empty()
                 )
             ProcessManager.finish_rag_build()
             st.success("✅ RAG index built successfully!")
@@ -152,11 +134,8 @@ else:
             log_highlight(f"app.py: RAG index build failed: {e}")
             st.exception(e)
     else:
-        # No rebuild needed, but check if user wants to force rebuild
         if rebuild_info["reason"] == "no_changes":
             st.success("✅ No file changes detected. RAG index is up to date.")
-            
-            # Ask user if they want to force rebuild
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.info("💡 **No new files to process.** The RAG index is already up to date with the latest changes.")
@@ -165,12 +144,11 @@ else:
                     st.session_state["force_rebuild"] = True
                     st.success("🔄 Force rebuild requested! The RAG will be completely rebuilt.")
                     st.rerun()
-        
-        # Load existing RAG index without rebuilding
+
         if not rag_manager.is_ready():
             log_highlight("app.py: Loading existing RAG index")
             try:
-                rag_manager.load_existing_rag_index(project_dir, ollama_model, ollama_endpoint, st.session_state.selected_project_type)
+                rag_manager.load_existing_rag_index(project_dir, ollama_model, ollama_endpoint, st.session_state.get("selected_project_type"))
                 st.success("✅ RAG index loaded successfully!")
                 log_highlight("app.py: RAG index loaded successfully")
             except Exception as e:
@@ -180,46 +158,43 @@ else:
         else:
             log_highlight("app.py: RAG index already loaded")
 
-# 4. Chat Interface
+# Chat Interface
 st.title(f"Chat with your `{project_config.project_type}` codebase: {project_config.project_dir_name}")
 ui.render_chat_history(project_dir)
 
 # Setup chat handler and input form
 if rag_manager.is_ready():
     log_highlight("app.py: RAG system ready, setting up chat handler")
-    # Main LLM for QA (provider-selected)
+    
     qa_llm = model_config.get_llm()
-    # Dedicated local LLM for rewriting (always Ollama)
     rewrite_llm = model_config.get_rewrite_llm()
+    
     chat_handler = ChatHandler(
         llm=qa_llm,
-        provider = model_config.get_provider(),
+        provider=model_config.get_provider(),
         project_config=project_config,
         project_dir=project_dir,
         rewrite_llm=rewrite_llm
     )
-    
+
     query, submitted = ui.render_chat_input()
 
     if submitted and query:
-        # Ensure thinking_logs is initialized before clearing
         st.session_state.setdefault("thinking_logs", [])
         st.session_state.thinking_logs.clear()
-        
+
         with st.chat_message("user"):
             st.markdown(query)
 
-        # Create a dedicated log placeholder for processing logs
         log_placeholder = st.empty()
-        
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
                     answer, reranked_docs, impact_files, metadata = chat_handler.process_query(
                         query, st.session_state["vectorstore"], log_placeholder, debug_mode
                     )
+
                     if answer:
-                        # Clear the processing logs and display only the clean answer
                         log_placeholder.empty()
                         st.markdown(answer)
                     else:
@@ -229,33 +204,29 @@ if rag_manager.is_ready():
                     log_placeholder.empty()
                     st.error(f"❌ Error processing query: {e}")
                     log_highlight(f"app.py: Chat processing error: {e}")
-        
+
         # Store the answer in session state for persistence
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
-        
+
         if debug_mode:
             moved = move_query_log(query, project_dir, debug_mode)
             if moved and debug_mode:
                 log_path, liked_dir, disliked_dir = moved
-                if log_path not in st.session_state.rated_logs:        # prevent dups
+                if log_path not in st.session_state.get("rated_logs", set()):
                     col1, col2 = st.columns(2)
                     if col1.button("👍 Like"):
                         ui._collect_feedback_ui(log_path, liked_dir)
                     if col2.button("👎 Dislike"):
                         ui._collect_feedback_ui(log_path, disliked_dir)
+                metadata["log_path"] = log_path
 
-            metadata["log_path"] = log_path         # NEW
-            
-        # Store in the expected format: (query, answer, source_docs, impact_files, metadata)
         chat_item = (query, answer, reranked_docs, impact_files, metadata)
         st.session_state.chat_history.append(chat_item)
-        
 
-# 5. Optional Debug Section
+# Optional Debug Section
 if debug_mode:
     ui.render_debug_section(project_config, ollama_model, ollama_endpoint, project_dir)
-    # 6. Processing logs (only in debug mode)
-    ui.render_processing_logs(st.empty(), debug_mode)
 
-
+# Processing logs (only in debug mode)
+ui.render_processing_logs(st.empty(), debug_mode)
