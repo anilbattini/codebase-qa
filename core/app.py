@@ -258,22 +258,4 @@ if debug_mode:
     # 6. Processing logs (only in debug mode)
     ui.render_processing_logs(st.empty(), debug_mode)
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - Complex log placeholder management - simplified to use st.empty() directly.
-# - Redundant chat handler instantiation - now only created when RAG is ready.
-# ADDED
-# - Disable RAG toggle: Added checkbox for direct LLM queries without RAG.
-# - render_custom_css: Added custom styling for better visual design.
-# - render_processing_logs: Added dedicated processing logs section.
-# - Enhanced logging throughout with log_highlight for better debugging.
-# - Fixed build_rag_index call to match updated method signature.
-# - 5-click debug mode integration: Debug tools only render when debug mode is enabled.
-# - Centralized log path resolution: Fixed setup_global_logger to use proper project-specific log directory.
-# REFACTORED
-# - Chat input logic changed to support `st.form` with proper form submission handling.
-# - Added `st.rerun()` after chat response to ensure proper chat history display.
-# - Simplified RAG build process with proper error handling and logging.
-# - Better session state management and initialization.
-# - Debug tools integration: Only show debug tools when debug mode is enabled via 5-click method.
-# - Logger initialization: Now uses centralized path resolution to prevent logs in tool directory.
+

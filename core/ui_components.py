@@ -783,24 +783,3 @@ class UIComponents:
                         # This will show a text area that users can select and copy from
                         st.code("\n".join(logs), language="text")
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - All simplified/incomplete UI methods from the previous incorrect version.
-# - Undefined rag_manager reference in render_chat_input - fixed to use session state.
-# - Duplicate processing logs display from render_debug_section - moved to dedicated render_processing_logs method.
-# ADDED
-# - Restored full sidebar logic from `ui_components_old.py`, including detailed project type selection, change confirmation dialogs, and logic to clear the DB on type change.
-# - render_custom_css: Added custom styling for better visual design and log display.
-# - render_processing_logs: Added dedicated processing logs section with copy/clear actions.
-# - Enhanced logging throughout with logger.py utilities for better debugging.
-# - render_chat_input: Fixed to use session state instead of undefined rag_manager reference.
-# - render_debug_section: Complete integration with DebugTools class, removed duplicate logging.
-# - render_chat_history: Enhanced with metadata display and auto-expansion.
-# - 5-click debug mode: Added debug mode activation by clicking title 5 times.
-# - Comprehensive debug tools: Vector DB Inspector, Chunk Analyzer, Retrieval Tester, Build Status, Logs Viewer.
-# REFACTORED
-# - All methods now use proper logging with log_highlight and log_to_sublog.
-# - Better error handling and user feedback throughout.
-# - Fixed duplicate element key issue by separating debug tools and processing logs.
-# - The class is now a complete and faithful port of the original `ui_components_old.py`, ensuring no UI functionality is lost.
-# - Debug mode only shows when enabled via 5-click method.

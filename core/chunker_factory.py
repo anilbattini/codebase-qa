@@ -189,13 +189,4 @@ def summarize_chunk(chunk: str, filename: str, project_config: ProjectConfig = N
     first_line = chunk.strip().splitlines()[0] if chunk.strip() else "No content"
     return f"{summary_context} From {display_filename}: {first_line[:80]}..." if len(first_line) > 80 else f"{summary_context} From {display_filename}: {first_line}"
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - All per-file/project local regex logging utilities (now central via logger.py).
-# - Redundant "windowed" line chunking for .py, .js, .kt in favor of config-based semantic units (class/function/component).
-# - Inline handling of context logging, repeated class/function extraction, and repeated overlap code blocks.
-# ADDED
-# - Semantic-aware chunk boundaries set by config per project type, never by hardcoded filetype checks.
-# - Metadata for "hierarchical context" (file > class > function) embedded for every chunk.
-# - All logging/sublong now handled by logger.py with highlighter on entry/exit for traceability.
-# - Clear pathway for DRY, easy extension for future formats/project types without code changes everywhere.
+

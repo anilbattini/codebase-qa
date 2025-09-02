@@ -648,14 +648,3 @@ def get_impact(file_name: str, project_dir: str = None) -> List[str]:
     except Exception as e:
         log_highlight(f"Error in impact analysis: {e}")
         return []
-
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - All module-level logging and sublogging helpers — now in logger.py utility and only imported.
-# - Accepting/processing of anchorless/generic or super-short chunks: replaced by explicit skip, so only semantically-whole/documented chunks are indexed. (Above, in main for loop.)
-# - Redundant code for duplicate chunk handling, chunk sanitization/summarization — now only one place, always after anchor validation.
-# ADDED
-# - logger.py utilities are now used exclusively for all logging and highlight, DRY-style.
-# - Enforce minimum semantic anchors ("screen_name", "class_names", "function_names", "component_name") for every chunk; log and skip if missing, see chunking_metadata.log.
-# - All statistics of missing/weak/duplicate/errored chunks are surfaced in Streamlit and log.
-# - All paths/project-local for vector DB, metadata, and logs (never hard-coded global).

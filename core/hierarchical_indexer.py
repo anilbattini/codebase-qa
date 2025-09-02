@@ -307,12 +307,3 @@ class HierarchicalIndexer:
         }.get(intent, None)
 
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - All old methods with minimal metadata checks, lack of missing anchor surfacing, lines ~20-85: replaced by _collect_metadata_stats and augmented indexing.
-# - Silent failures for missing metadata or orphans: now logged in hierarchy_status.log, lines ~24-32.
-# ADDED
-# - _collect_metadata_stats (lines 20–36): Gathers and logs all documents missing semantic anchors at every hierarchy level, logs to sublog for diagnosis.
-# - All _create_*_index methods now take `missing` list and surface/fill "missing" key in index output for easy root-cause review.
-# - Central log_highlight and log_to_sublog usage (all project-local, import from logger.py).
-# - All log/diagnostic/summary helpers pulled from logger.py for DRY-ness and consistency.

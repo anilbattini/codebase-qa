@@ -260,13 +260,3 @@ class RagManager:
         self.vectorstore = None
         # Can extend to clean stateful logs or diagnostics here
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - Parameter-based constructor that required project_dir, model, endpoint - replaced with simple constructor for better flexibility.
-# - Complex build_or_load_rag method - simplified to build_rag_index with clear separation of concerns.
-# ADDED
-# - initialize_session_state: Proper session state initialization for Streamlit app.
-# - setup_llm: Dedicated method for LLM setup with proper logging.
-# - build_rag_index: Enhanced with proper logging using logger.py utilities.
-# - Enhanced logging throughout with log_highlight and log_to_sublog for better debugging.
-# - Fixed method signature to match old working version with project_type and log_placeholder parameters.

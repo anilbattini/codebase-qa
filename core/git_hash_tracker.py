@@ -542,11 +542,3 @@ class FileHashTracker:
             with open(self.git_commit_file, "w") as f:
                 json.dump({"commit": current_commit}, f, indent=2)
 
-# --------------- CODE CHANGE SUMMARY ---------------
-# REMOVED
-# - All in-method print statements and ad-hoc logging; now routed exclusively through logger.py for DRY, centralized logging.
-# - Old/duplicated fallback logic for file changes, reduced by clearer try/fallback structure.
-# ADDED
-# - log_highlight/log_to_sublog used for tracking/git/content-hash logs.
-# - Unified status/caching logic for both git and non-git contexts.
-# - Clean entrypoint for downstream code to query tracking method, changed files, update state.
