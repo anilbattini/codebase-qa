@@ -119,14 +119,11 @@ def log_highlight(msg, logger=None):
 # logger.py  ── FEEDBACK HELPERS ─────────────────────────────────────────
 
 
-def move_query_log(query: str, project_dir: str, debug_mode: bool):
+def move_query_log(query: str, project_dir: str):
     """
     Move preparing_full_context.log  ➜  logs/queries/<TS>_<first7>.log
     Returns (new_path, liked_dir, disliked_dir) or None.
     """
-    if not debug_mode:
-        return None
-
     base_logs   = get_project_log_file(project_dir, "")      # …/logs/
     src_log     = get_project_log_file(project_dir, "preparing_full_context.log")
     if not os.path.exists(src_log):

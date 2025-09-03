@@ -209,17 +209,16 @@ if rag_manager.is_ready():
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
 
-        if debug_mode:
-            moved = move_query_log(query, project_dir, debug_mode)
-            if moved and debug_mode:
-                log_path, liked_dir, disliked_dir = moved
-                if log_path not in st.session_state.get("rated_logs", set()):
-                    col1, col2 = st.columns(2)
-                    if col1.button("👍 Like"):
-                        ui._collect_feedback_ui(log_path, liked_dir)
-                    if col2.button("👎 Dislike"):
-                        ui._collect_feedback_ui(log_path, disliked_dir)
-                metadata["log_path"] = log_path
+        moved = move_query_log(query, project_dir)
+        if moved and debug_mode:
+            log_path, liked_dir, disliked_dir = moved
+            if log_path not in st.session_state.get("rated_logs", set()):
+                col1, col2 = st.columns(2)
+                if col1.button("👍 Like"):
+                    ui._collect_feedback_ui(log_path, liked_dir)
+                if col2.button("👎 Dislike"):
+                    ui._collect_feedback_ui(log_path, disliked_dir)
+            metadata["log_path"] = log_path
 
         chat_item = (query, answer, reranked_docs, impact_files, metadata)
         st.session_state.chat_history.append(chat_item)
