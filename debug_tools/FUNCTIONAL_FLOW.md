@@ -461,7 +461,7 @@ User opens application and needs to configure LLM provider
 [CustomLLMClient.invoke_with_system_user, Line 59, core/custom_llm_client.py](https://github.com/anilbattini/codebase-qa/blob/main/core/custom_llm_client.py#L59)  
 	└─ **NEW**: Direct method for system/user prompt separation  
 	└─ **NEW**: Handles OpenAI-compatible API calls with proper message formatting  
-	└─ **NEW**: Called directly from chat_handler.py for cloud provider queries  
+	└─ **NEW**: Called directly from query.chat_handler.py for cloud provider queries  
 
 ---
 

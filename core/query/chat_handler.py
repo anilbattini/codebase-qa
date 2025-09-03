@@ -3,14 +3,14 @@
 from datetime import datetime
 import streamlit as st
 
-from build_rag import update_logs
-from context_builder import ContextBuilder
-from prompt_router import PromptRouter
-from query_intent_classifier import QueryIntentClassifier
+from index_builder import update_logs
+from context.context_builder import ContextBuilder
+from query.prompt_router import PromptRouter
+from query.query_intent_classifier import QueryIntentClassifier
 from logger import log_highlight, log_to_sublog
 from config.feature_toggle_manager import FeatureToggleManager
-from retrieval_logic import RetrievalLogic
-from answer_validation_handler import AnswerValidationHandler
+from query.retrieval_logic import RetrievalLogic
+from query.answer_validation_handler import AnswerValidationHandler
 
 class ChatHandler:
     """

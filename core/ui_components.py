@@ -2,16 +2,45 @@
 
 import streamlit as st
 import os
-import shutil
 from config.config import ProjectConfig
 from config.model_config import model_config
 from logger import get_project_log_file, log_highlight, log_to_sublog, rate_and_copy
-from logger import get_project_log_file
-
 from process_manager import ProcessManager
 
 class UIComponents:
     """Handles all UI rendering components for the RAG app, restored from the original version."""
+    
+    # Add this method to UIComponents class:
+
+    def render_feature_toggles_sidebar(self, project_dir: str = "."):
+        """Render feature toggle status in sidebar for admin users."""
+        from config.feature_toggle_manager import FeatureToggleManager
+        
+        if st.sidebar.expander("🎛️ Feature Toggles", expanded=False):
+            try:
+                current_version = FeatureToggleManager.app_version()
+                st.sidebar.write(f"**App Version:** `{current_version}`")
+                
+                feature_states = FeatureToggleManager.get_all_feature_states(project_dir)
+                
+                for feature_name, state in feature_states.items():
+                    config = state["config"]
+                    enabled = state["enabled"]
+                    
+                    # Status indicator
+                    status_icon = "🟢" if enabled else "🔴"
+                    st.sidebar.write(f"{status_icon} **{feature_name}**")
+                    st.sidebar.write(f"   Enabled: {config.get('enabled', False)}")
+                    st.sidebar.write(f"   Min Version: {config.get('minVersion', 'N/A')}")
+                    st.sidebar.write(f"   Status: {'ACTIVE' if enabled else 'DISABLED'}")
+                    
+                    if config.get("description"):
+                        st.sidebar.caption(config["description"])
+                    st.sidebar.write("---")
+                    
+            except Exception as e:
+                st.sidebar.error(f"Error loading toggles: {e}")
+
     
     # In ui_components.py - UPDATED with concurrency safety
     def _collect_feedback_ui(self, log_path: str, target_dir: str):

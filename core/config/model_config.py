@@ -8,8 +8,7 @@ Follows clean code principles with getters/setters and proper encapsulation.
 
 import os
 from typing import Dict, Any, Optional
-
-from custom_llm_client import CustomLLMClient
+from config.custom_llm_client import CustomLLMClient
 from langchain.prompts import PromptTemplate
 from logger import log_highlight
 
@@ -68,8 +67,7 @@ class ModelConfig:
         self._streaming = value
         log_highlight(f"ModelConfig: Set streaming to {value}")
     
-    # Add this import at the top of model_config.py
-    from custom_llm_client import CustomLLMClient
+    
 
     def get_llm(self, **overrides):
         """
@@ -100,8 +98,6 @@ class ModelConfig:
             return ChatOllama(**params)
             
         elif provider == 'cloud':
-            # 🆕 NEW: Use Runnable-compatible CustomLLMClient
-            from custom_llm_client import CustomLLMClient
             
             api_key = self.get_cloud_api_key()
             if not api_key:

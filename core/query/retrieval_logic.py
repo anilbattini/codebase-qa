@@ -1,11 +1,13 @@
 # retrieval_logic.py
 
+import json
+import os
 import streamlit as st
 import re
 from typing import List
 
-from build_rag import update_logs, get_impact
-from logger import log_to_sublog
+from index_builder import update_logs
+from logger import log_highlight, log_to_sublog
 from config.feature_toggle_manager import FeatureToggleManager
 
 class RetrievalLogic:
@@ -182,6 +184,29 @@ class RetrievalLogic:
                 f"Rewriting failed for: {query} (intent={intent}). Error: {e}\n")
             update_logs(log_placeholder)
             return query
+        
+    def get_impact(self, file_name: str, project_config) -> List[str]:
+        """Get impact analysis for a file."""
+        relationship_file = project_config.get_metadata_file()
+        if not os.path.exists(relationship_file):
+            return []
+
+        try:
+            with open(relationship_file) as f:
+                code_map = json.load(f)
+            normalized_file_name = project_config.normalize_path_for_storage(file_name)
+            impacted = set()
+            todo = {normalized_file_name}
+            while todo:
+                current_file = todo.pop()
+                for dependant, deps in code_map.items():
+                    if current_file in deps and dependant not in impacted:
+                        impacted.add(dependant)
+                        todo.add(dependant)
+            return list(impacted)
+        except Exception as e:
+            log_highlight(f"Error in impact analysis: {e}")
+            return []
 
     def analyze_impact(self, query, intent, log_placeholder):
         """Perform impact analysis if applicable to intent."""
@@ -192,7 +217,7 @@ class RetrievalLogic:
             
             file_mentions = self.extract_file_mentions(query)
             for mention in file_mentions:
-                related_files = get_impact(mention, self.project_dir)
+                related_files = self.get_impact(mention, self.project_config)
                 impact_files.extend(related_files)
             
             if impact_files:

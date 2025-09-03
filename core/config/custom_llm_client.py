@@ -65,7 +65,7 @@ class CustomLLMClient(Runnable):
     def invoke_with_system_user(self, system_prompt: str, user_prompt: str, **kwargs):
         """
         🆕 NEW: Direct method for system/user prompt separation.
-        Called directly from chat_handler.py for cloud provider.
+        Called directly from query.chat_handler.py for cloud provider.
         """
         messages = []
         

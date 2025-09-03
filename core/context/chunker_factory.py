@@ -83,7 +83,7 @@ class SemanticChunker:
         score = 0.0
         
         # Get enhanced metadata for this chunk
-        from metadata_extractor import MetadataExtractor
+        from context.metadata_extractor import MetadataExtractor
         extractor = MetadataExtractor(self.config)
         metadata = extractor.create_enhanced_metadata(chunk, f"temp.{file_ext}", 0)
         

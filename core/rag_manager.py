@@ -3,12 +3,16 @@
 import os
 import shutil
 import streamlit as st
+import json
+from typing import List
+
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
+
 from config.config import ProjectConfig
 from config.model_config import model_config
 from logger import log_highlight, log_to_sublog
-from build_rag import build_rag
+from index_builder import IndexBuilder
 
 class RagManager:
     """
@@ -36,20 +40,17 @@ class RagManager:
             overrides['model'] = ollama_model
         if ollama_endpoint:
             overrides['endpoint'] = ollama_endpoint
-
         llm = model_config.get_llm(**overrides)
         self.llm = llm
-
         try:
             active = model_config.get_active_llm_config()
             log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".",
-                "rag_manager.log",
-                f"LLM setup via model_config: provider={active.get('provider')} model={active.get('model')} endpoint={active.get('endpoint')}")
+                          "rag_manager.log",
+                          f"LLM setup via model_config: provider={active.get('provider')} model={active.get('model')} endpoint={active.get('endpoint')}")
         except Exception as e:
             log_to_sublog(self.project_dir if hasattr(self, 'project_dir') else ".",
-                "rag_manager.log",
-                f"LLM setup via model_config (active config unavailable): {e}")
-
+                          "rag_manager.log",
+                          f"LLM setup via model_config (active config unavailable): {e}")
         return self.llm
 
     def cleanup_existing_files(self, project_dir, project_type):
@@ -58,7 +59,6 @@ class RagManager:
         try:
             project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
             db_dir = project_config.get_db_dir()
-
             cleanup_targets = []
             if os.path.exists(db_dir):
                 cleanup_targets.append(db_dir)
@@ -78,13 +78,13 @@ class RagManager:
                             break
                         except PermissionError as e:
                             if attempt < max_retries - 1:
-                                log_to_sublog(project_dir, "rag_manager.log", 
-                                    f"⚠️ Permission error deleting {target}, retrying in 1 second... (attempt {attempt + 1}/{max_retries})")
+                                log_to_sublog(project_dir, "rag_manager.log",
+                                              f"⚠️ Permission error deleting {target}, retrying in 1 second... (attempt {attempt + 1}/{max_retries})")
                                 import time
                                 time.sleep(1)
                             else:
-                                log_to_sublog(project_dir, "rag_manager.log", 
-                                    f"❌ Failed to delete {target} after {max_retries} attempts: {e}")
+                                log_to_sublog(project_dir, "rag_manager.log",
+                                              f"❌ Failed to delete {target} after {max_retries} attempts: {e}")
                                 raise e
                         except Exception as e:
                             log_to_sublog(project_dir, "rag_manager.log", f"❌ Error deleting {target}: {e}")
@@ -99,7 +99,6 @@ class RagManager:
             self.retriever = None
             self.vectorstore = None
             self.llm = None
-
             import time
             time.sleep(0.5)
             log_to_sublog(project_dir, "rag_manager.log", "=== CLEANUP COMPLETE ===")
@@ -113,25 +112,20 @@ class RagManager:
 
     def should_rebuild_index(self, project_dir, force_rebuild, project_type):
         """Check if the RAG index should be rebuilt based on database existence and git tracking."""
-        from git_hash_tracker import FileHashTracker
-
+        from context.git_hash_tracker import FileHashTracker
         project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
         db_dir = project_config.get_db_dir()
-
         chroma_db_path = os.path.join(db_dir, "chroma.sqlite3")
         if not os.path.exists(chroma_db_path):
             log_to_sublog(project_dir, "rag_manager.log", f"No SQLite database found at {chroma_db_path}, rebuilding")
             return {"rebuild": True, "reason": "no_database", "files": None}
-
         git_tracking_file = os.path.join(db_dir, "git_tracking.json")
         if not os.path.exists(git_tracking_file):
             log_to_sublog(project_dir, "rag_manager.log", f"No git tracking file found at {git_tracking_file}, rebuilding")
             return {"rebuild": True, "reason": "no_tracking", "files": None}
-
         tracker = FileHashTracker(project_dir, db_dir)
         extensions = project_config.get_extensions()
         changed_files = tracker.get_changed_files(extensions)
-
         if changed_files:
             log_to_sublog(project_dir, "rag_manager.log", f"Found {len(changed_files)} changed files, rebuilding")
             return {"rebuild": True, "reason": "files_changed", "files": changed_files}
@@ -145,24 +139,17 @@ class RagManager:
         with st.spinner("🔄 Building RAG index..."):
             if incremental and files_to_process:
                 log_to_sublog(project_dir, "rag_manager.log", f"Incremental rebuild: processing {len(files_to_process)} changed files")
-                vectorstore = build_rag(
-                    project_dir=project_dir,
-                    ollama_model=ollama_model,
-                    ollama_endpoint=ollama_endpoint,
-                    log_placeholder=log_placeholder,
-                    project_type=project_type,
-                    incremental=True,
-                    files_to_process=files_to_process
-                )
             else:
                 log_to_sublog(project_dir, "rag_manager.log", "Full rebuild: processing all files")
-                vectorstore = build_rag(
-                    project_dir=project_dir,
-                    ollama_model=ollama_model,
-                    ollama_endpoint=ollama_endpoint,
-                    log_placeholder=log_placeholder,
-                    project_type=project_type
-                )
+
+            # Create IndexBuilder and delegate the building process
+            project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
+            builder = IndexBuilder(project_config, project_dir)
+            
+            vectorstore = builder.build_index(
+                ollama_model, ollama_endpoint, log_placeholder,
+                incremental, files_to_process
+            )
 
             st.session_state["vectorstore"] = vectorstore
             st.session_state["project_dir_used"] = project_dir
@@ -174,9 +161,7 @@ class RagManager:
         try:
             project_config = ProjectConfig(project_type=project_type, project_dir=project_dir)
             db_dir = project_config.get_db_dir()
-
             embedding_model = "nomic-embed-text:latest"
-
             try:
                 import requests
                 response = requests.get(f"{ollama_endpoint}/api/tags", timeout=5)
@@ -196,16 +181,13 @@ class RagManager:
                 embedding_model = ollama_model
 
             embeddings = OllamaEmbeddings(model=embedding_model, base_url=ollama_endpoint)
-
             vectorstore = Chroma(
                 persist_directory=db_dir,
                 embedding_function=embeddings
             )
-
             st.session_state["vectorstore"] = vectorstore
             st.session_state["project_dir_used"] = project_dir
             log_to_sublog(project_dir, "rag_manager.log", f"Loaded existing RAG index built for: {project_dir}")
-
         except Exception as e:
             log_to_sublog(project_dir, "rag_manager.log", f"Failed to load existing RAG index: {e}")
             raise e
@@ -223,3 +205,4 @@ class RagManager:
         log_highlight("RagManager.reset")
         self.retriever = None
         self.vectorstore = None
+

@@ -5,7 +5,7 @@ import streamlit as st
 from config.model_config import model_config
 from rag_manager import RagManager
 from ui_components import UIComponents
-from chat_handler import ChatHandler
+from query.chat_handler import ChatHandler
 from logger import setup_global_logger, log_highlight
 from logger import move_query_log
 from config.config import ProjectConfig
