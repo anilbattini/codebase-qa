@@ -1,6 +1,6 @@
-# MERMAID CHART FLOW DIAGRAM
+# MERMAID CHART FLOW DIAGRAM - UPDATED FOR 2025-09-03 ENHANCEMENTS
 
-## 🟦 RAG Index Build & Ready Flow
+## 🟦 RAG Index Build & Ready Flow (Enhanced)
 
 ```mermaid
 flowchart TD
@@ -28,25 +28,21 @@ flowchart TD
     F2 --> G2[Start Incremental RAG Build Workflow]
     F3 --> S[Load existing RAG index from disk]
     
-    G1 --> H1[Clean existing vector DB Clear session state]
-    G2 --> H2[Preserve existing database Process changed files only]
+    G1 --> H1[Clean existing vector DB and clear session state]
+    G2 --> H2[Preserve existing database and process changed files]
     
-    H1 --> I[Scan ALL files and apply chunking]
-    H2 --> I2[Scan CHANGED files and apply chunking]
+    H1 --> I[Scan ALL files and apply semantic chunking]
+    H2 --> I2[Scan CHANGED files and apply semantic chunking]
     
-    I --> J[Extract semantic metadata]
+    I --> J[Extract semantic metadata including design patterns, call sites, error handling]
     I2 --> J
     
-    J --> J1[Build Cross-References]
-    J1 --> J2[Symbol Definitions & Usage Maps]
-    J2 --> J3[Inheritance Relationships] 
-    J3 --> J4[Design Pattern Detection]
-    J4 --> K[Generate chunk fingerprints]
-    K --> L[Summarize chunks for relevance]
-    L --> M[Build code relationship map]
-    M --> N[Create hierarchical index]
-    N --> N1[Phase 3 Enhanced Context Building]
-    N1 --> N2[Multi-strategy Context Assembly]
+    J --> J1[Build Cross-References: symbols, call graphs, inheritance]
+    J1 --> J2[Generate statistics and fingerprint chunks]
+    J2 --> J3[Summarize chunks for relevance]
+    J3 --> J4[Build code relationships and hierarchical index]
+    J4 --> N1[Phase 3 Enhanced Context Building]
+    N1 --> N2[Multi-strategy Context Assembly incorporating impact analysis]
     N2 --> O[Sanitize chunks for embedding]
     O --> P[Embed chunks via Ollama API with Model Consistency]
     P --> Q1[Store embeddings in NEW Chroma DB]
@@ -58,7 +54,7 @@ flowchart TD
     PM4 --> PM5[Re-enable UI Elements]
     PM5 --> Z[RAG system is ready for queries]
     
-    S --> T[Ensure embedding model consistency Restore retriever and QA chain]
+    S --> T[Ensure embedding model consistency and restore retriever/QA chain]
     T --> Z
     
     %% Force Rebuild Flow
@@ -68,7 +64,7 @@ flowchart TD
     V --> G1
     
     %% Enhanced Git Tracking
-    E --> W[Enhanced Git Tracking: git diff + working directory changes]
+    E --> W[Enhanced Git Tracking: full git diff + working directory]
     W --> X{Detect changes between commits}
     X -->|Changes found| F2
     X -->|No changes| F3
@@ -79,7 +75,7 @@ flowchart TD
     DM2 --> DM3[Vector DB Inspector, Chunk Analyzer, Retrieval Tester]
 ```
 
-## 🟩 User Query & Answer Flow
+## 🟩 User Query & Answer Flow (Enhanced with Validation & Diagnostics)
 
 ```mermaid
 flowchart TD
@@ -90,8 +86,9 @@ flowchart TD
     B --> C[System checks if RAG pipeline is ready]
     C --> D[Intent classifier analyzes user's query with confidence scoring]
     D --> D1[Extract query context hints based on intent]
-    D1 --> E[Enhanced query rewriting with intent awareness]
+    D1 --> E[Enhanced contamination-free query rewriting with intent awareness]
     E --> F[Multi-fallback retrieval strategy]
+    
     F --> F1[Try rewritten query]
     F1 --> F2{Results found?}
     F2 -->|No| F3[Try original query]
@@ -101,14 +98,15 @@ flowchart TD
     F2 -->|Yes| G
     F4 -->|Yes| G
     
-    G --> G1[Phase 3 Enhanced Context Assembly]
-    G1 --> G2[Multi-layered Context Building]
-    G2 --> G3[Hierarchical + Call Flow + Inheritance + Impact Context]
-    G3 --> G4[Context Ranking by Intent Relevance]
-    G4 --> H[Chat handler processes with RetrievalQA and enhanced context]
+    G --> G1[Phase 3 Enhanced Context Assembly with multi-layer layers]
+    G1 --> G2[Multi-layered Context Building: hierarchical, call flow, inheritance, impact]
+    G2 --> G3[Context Ranking by Intent Relevance]
+    G3 --> H[Chat handler uses RetrievalQA with enhanced context]
     H --> H1[Document re-ranking by intent]
     H1 --> H2[Impact analysis if applicable]
-    H2 --> I[Chat UI renders response with metadata and sources]
+    H2 --> H3[Answer generation]
+    H3 --> H4[Answer validation & pipeline diagnostics via AnswerValidationHandler]
+    H4 --> I[Chat UI renders response with metadata, sources, and quality feedback]
 ```
 
 ## 🟨 Enhanced Provider Selection Flow
@@ -212,7 +210,7 @@ flowchart TD
     P1 --> P2[Display selected log content with download]
 ```
 
-## 🟦 Cross-Reference Building & Enhanced Context Flow
+## 🟦 Cross-Reference Building & Enhanced Context Flow (Updated)
 
 ```mermaid
 flowchart TD
@@ -253,7 +251,7 @@ flowchart TD
     I --> J[Multi-Strategy Context Assembly Available]
 ```
 
-## 🟩 Enhanced Query Processing with Fallback Strategies
+## 🟩 Enhanced Query Processing with Fallback Strategies (Updated)
 
 ```mermaid
 flowchart TD
@@ -295,3 +293,72 @@ flowchart TD
     S --> T[Document Re-ranking by Intent]
     T --> U[Return Answer with Metadata and Sources]
 ```
+
+## 🆕 **New Addition: Answer Validation & Quality Monitoring Flow (2025-09-03)**
+
+```mermaid
+flowchart TD
+    A[Answer Generated by LLM] --> B[AnswerValidationHandler.validate_answer_quality]
+    B --> C[Multi-Metric Quality Assessment]
+    
+    C --> C1[Calculate Relevancy Score - Query/Answer Alignment]
+    C1 --> C2[Calculate Completeness Score - Context Utilization]
+    C2 --> C3[Calculate Accuracy Score - Technical Reference Validation]
+    C3 --> C4[Calculate Code Quality Score - File References, Methods, Patterns]
+    
+    C4 --> D[Overall Quality Score Calculation]
+    D --> E{Quality Score >= 0.8?}
+    E -->|Yes| F[Mark as HIGH QUALITY]
+    E -->|No| G{Quality Score >= 0.6?}
+    G -->|Yes| H[Mark as ACCEPTABLE]
+    G -->|No| I[Mark as NEEDS IMPROVEMENT]
+    
+    F --> J[Log Quality Metrics]
+    H --> J
+    I --> J
+    
+    J --> K[Pipeline Diagnostics Analysis]
+    K --> K1[Entity Preservation Check in Rewriting]
+    K1 --> K2[Retrieval Coverage Analysis]
+    K2 --> K3[Context Utilization Assessment]
+    
+    K3 --> L{Critical Issues Found?}
+    L -->|Yes| M[Generate Quality Alert]
+    L -->|No| N[Log Normal Metrics]
+    
+    M --> M1[Log to quality_alerts.log]
+    M1 --> O[Generate Fix Recommendations]
+    N --> N1[Log to quality_metrics.log]
+    
+    O --> O1[Entity Preservation Fixes if needed]
+    O1 --> O2[Retrieval Scope Improvements if needed]
+    O2 --> O3[Context Enhancement Suggestions if needed]
+    
+    O3 --> P[Pipeline Diagnosis Complete]
+    N1 --> P
+    P --> Q[Return Quality Assessment to Chat Handler]
+```
+
+## **Key Enhancements Reflected in Updated Charts:**
+
+### **🔄 Updated Existing Flows:**
+1. **RAG Build Flow**: Now includes enhanced metadata extraction with design patterns, call sites, and error handling
+2. **Query Processing**: Added contamination-free query rewriting and multi-fallback retrieval strategies  
+3. **Answer Generation**: Integrated answer validation and pipeline diagnostics via `AnswerValidationHandler`
+
+### **🆕 New Components Added:**
+1. **Answer Validation Handler**: Complete quality assessment pipeline with multi-metric scoring
+2. **Retrieval Logic Module**: Modular retrieval operations with intelligent fallback mechanisms
+3. **Quality Monitoring**: Real-time quality alerts and pipeline diagnostics
+4. **Enhanced Logging**: New log files for quality metrics, alerts, and pipeline diagnosis
+
+### **🐛 Bug Fixes Represented:**
+1. **Entity Preservation**: Query rewriting now maintains important technical terms
+2. **Retrieval Coverage**: Multi-strategy approach ensures comprehensive document retrieval
+3. **Quality Consistency**: Continuous validation and monitoring prevents poor responses
+4. **Modular Architecture**: Clean separation of concerns for better maintainability
+
+These updated Mermaid charts provide a complete and accurate representation of the enhanced RAG Codebase QA Tool, including all recent improvements and architectural changes made on 2025-09-03.
+
+Sources
+[1] MERMAID_CHART.md https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/c04e8dda-2d1d-46a5-857b-421f61c92f78/MERMAID_CHART.md
