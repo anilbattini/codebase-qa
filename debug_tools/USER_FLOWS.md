@@ -1,403 +1,391 @@
-# MERMAID CHART FLOW DIAGRAM - UPDATED FOR 2025-09-03 ENHANCEMENTS
+# 🎨 Enhanced MERMAID Chart Flow Diagrams - Updated for 2025-09-03 with Visual Improvements
 
-## 🟦 RAG Index Build & Ready Flow (Enhanced)
+## 🎨 Color Coding System
+
+- **🟣 Purple**: User Actions & Interactions
+- **🟢 Teal**: System Processes & Operations  
+- **🟠 Orange**: Decision Points & Conditionals
+- **🔵 Blue**: Database & Storage Operations
+- **🔴 Red**: Warnings, Errors & Critical Actions
+- **🟡 Yellow**: Debug & Development Features
+
+## 🟦 RAG Index Build & Ready Flow (Enhanced with Colors & Layout)
 
 ```mermaid
 flowchart TD
-    A[User selects project directory, project type, and provider] --> A1{Choose Provider}
-    A1 -->|Ollama Local| A2[Configure Ollama Model & Endpoint]
-    A1 -->|Cloud OpenAI| A3[Configure Cloud Endpoint & API Key]
-    A2 --> B[Validate Ollama Connection]  
-    A3 --> B1[Validate Cloud API Key & Endpoint]
-    B --> C[Initialize session state for retriever and QA chain]
-    B1 --> C
-    C --> D[Apply project type and config Load file extensions and chunking rules]
-    D --> E{Should rebuild index? Check DB, tracking, and file changes}
+    %% Color Definitions
+    classDef userAction fill:#6f42c1,stroke:#4e2a8e,color:#fff,stroke-width:2px,font-weight:bold
+    classDef systemProcess fill:#20b2aa,stroke:#008b8b,color:#fff,stroke-width:2px
+    classDef decision fill:#ffa500,stroke:#cc8400,color:#000,stroke-width:3px,font-weight:bold
+    classDef database fill:#4682b4,stroke:#2c5282,color:#fff,stroke-width:2px
+    classDef warning fill:#dc3545,stroke:#a52722,color:#fff,stroke-width:2px,font-weight:bold
+    classDef debug fill:#ffd700,stroke:#b8860b,color:#000,stroke-width:2px
+
+    %% User Initialization
+    A["👤 User selects project directory,<br/>project type, and provider"]:::userAction
     
-    E -->|No Database| F1[Full Rebuild: Clean database directory]
-    E -->|No Tracking| F1
-    E -->|Files Changed| F2[Incremental Rebuild: Process only changed files]
-    E -->|No Changes| F3[No Rebuild: Load existing index]
+    %% Provider Selection Flow
+    A --> B{"🔌 Choose Provider?"}:::decision
+    B -->|"🏠 Ollama Local"| C["⚙️ Configure Ollama<br/>Model & Endpoint"]:::systemProcess
+    B -->|"☁️ Cloud OpenAI"| D["🌐 Configure Cloud<br/>Endpoint & API Key"]:::systemProcess
     
-    F1 --> PM1[core/process_manager.py: ProcessManager.start_rag_build]
-    F2 --> PM1
-    PM1 --> PM2[Disable UI During Build]
-    PM2 --> PM3[Show Build Progress with Timeout Protection]
+    C --> E["✅ Validate Ollama<br/>Connection"]:::systemProcess
+    D --> F["✅ Validate Cloud<br/>Connection"]:::systemProcess
     
-    PM3 --> G1[Start Full RAG Build Workflow]
-    F2 --> G2[Start Incremental RAG Build Workflow]
-    F3 --> S[Load existing RAG index from disk]
+    E --> G["🚀 Initialize Session<br/>and State"]:::systemProcess
+    F --> G
     
-    G1 --> H1[Clean existing vector DB and clear session state]
-    G2 --> H2[Preserve existing database and process changed files]
+    %% Configuration Loading
+    G --> H["📂 Load Project Type<br/>and Config"]:::systemProcess
+    H --> I{"🔍 Should Rebuild Index?<br/>(DB/Tracking/Changes)"}:::decision
     
-    H1 --> I[core/index_builder.py: Scan ALL files and apply semantic chunking]
-    H2 --> I2[core/index_builder.py: Scan CHANGED files and apply semantic chunking]
+    %% Build Decision Paths
+    I -->|"❌ No Database"| J["🗑️ Full Rebuild:<br/>Clean Database"]:::warning
+    I -->|"📝 Changes Detected"| K["🔄 Incremental Rebuild:<br/>Process Changed Files"]:::systemProcess
+    I -->|"✅ No Changes"| L["💾 Load Existing<br/>Index"]:::database
     
-    I --> J[core/context/metadata_extractor.py: Extract semantic metadata including design patterns, call sites, error handling]
-    I2 --> J
+    %% Process Management
+    J --> M["🚧 ProcessManager:<br/>start_rag_build()"]:::systemProcess
+    K --> M
+    M --> N["🚫 Disable UI Controls<br/>During Build"]:::systemProcess
+    N --> O["📊 Show Build Progress<br/>with Timeout Protection"]:::systemProcess
     
-    J --> J1[core/context/cross_reference_builder.py: Build Cross-References: symbols, call graphs, inheritance]
-    J1 --> J2[Generate statistics and fingerprint chunks]
-    J2 --> J3[core/context/chunker_factory.py: Summarize chunks for relevance]
-    J3 --> J4[core/context/hierarchical_indexer.py: Build code relationships and hierarchical index]
-    J4 --> N1[Phase 3 Enhanced Context Building]
-    N1 --> N2[core/context/context_builder.py: Multi-strategy Context Assembly incorporating impact analysis]
-    N2 --> O[Sanitize chunks for embedding]
-    O --> P[Embed chunks via Ollama API with Model Consistency]
-    P --> Q1[Store embeddings in NEW Chroma DB]
-    P --> Q2[Update existing Chroma DB with new documents]
+    %% Build Workflows
+    O --> P{"🛠️ Build Workflow Type"}:::decision
+    P -->|"🔨 Full Build"| Q["📁 Scan ALL Files<br/>Semantic Chunking"]:::systemProcess
+    P -->|"⚡ Incremental"| R["📄 Scan CHANGED Files<br/>Semantic Chunking"]:::systemProcess
     
-    Q1 --> R[Set retriever and QA chain in session state]
-    Q2 --> R
-    R --> PM4[core/process_manager.py: ProcessManager.finish_rag_build]
-    PM4 --> PM5[Re-enable UI Elements]
-    PM5 --> Z[RAG system is ready for queries]
+    %% Core Processing Pipeline
+    Q --> S["🧠 core/context/metadata_extractor.py:<br/>Extract Metadata & Patterns"]:::systemProcess
+    R --> S
+    S --> T["🔗 core/context/cross_reference_builder.py:<br/>Build Cross-References"]:::systemProcess
+    T --> U["📊 Generate Statistics<br/>& Fingerprints"]:::systemProcess
+    U --> V["📝 core/context/chunker_factory.py:<br/>Summarize Chunks"]:::systemProcess
+    V --> W["🏗️ core/context/hierarchical_indexer.py:<br/>Build Hierarchical Index"]:::systemProcess
+    W --> X["🎯 Enhanced Context<br/>Assembly"]:::systemProcess
+    X --> Y["🔢 Embed Chunks via<br/>Provider API"]:::systemProcess
     
-    S --> T[Ensure embedding model consistency and restore retriever/QA chain]
-    T --> Z
+    %% Database Operations
+    Y --> Z["💾 Save to Vector<br/>Database"]:::database
+    Z --> AA["🔧 Setup Retriever<br/>& QA Chain"]:::systemProcess
+    AA --> BB["🚧 ProcessManager:<br/>finish_rag_build()"]:::systemProcess
+    BB --> CC["✅ Re-enable UI<br/>Controls"]:::systemProcess
+    CC --> DD["🎉 System Ready<br/>for Queries"]:::userAction
     
-    %% Force Rebuild Flow
-    F3 --> U{User wants Force Rebuild?}
-    U -->|Yes| V[Force Rebuild: Clear all data and rebuild]
-    U -->|No| T
-    V --> G1
+    %% Existing Index Path
+    L --> EE["🔍 Verify Model<br/>Consistency"]:::systemProcess
+    EE --> AA
     
-    %% Enhanced Git Tracking
-    E --> W[core/context/git_hash_tracker.py: Enhanced Git Tracking: full git diff + working directory]
-    W --> X{Detect changes between commits}
-    X -->|Changes found| F2
-    X -->|No changes| F3
+    %% Error Handling
+    O --> FF{"⏰ Timeout Exceeded?<br/>(15 min limit)"}:::decision
+    FF -->|"⚠️ Yes"| GG["🚨 Show Timeout Warning<br/>& Force Stop Option"]:::warning
+    FF -->|"✅ No"| O
+    GG --> HH{"👤 User Action"}:::decision
+    HH -->|"🛑 Force Stop"| II["❌ Force Stop Build"]:::warning
+    HH -->|"⏳ Continue"| O
+    II --> CC
     
-    %% Debug Mode Activation
-    Z --> DM1{Debug Mode Enabled?}
-    DM1 -->|5-Click Activation| DM2[Show Debug Tools Panel]
-    DM2 --> DM3[Vector DB Inspector, Chunk Analyzer, Retrieval Tester]
+    %% Debug Mode
+    DD --> JJ{"🔧 Debug Mode<br/>Enabled?"}:::decision
+    JJ -->|"🎯 5-Click Activation"| KK["🛠️ Show Debug Tools<br/>Panel"]:::debug
+    KK --> LL["🔍 Vector DB Inspector<br/>Chunk Analyzer<br/>Retrieval Tester"]:::debug
 ```
 
-## 🟩 User Query & Answer Flow (Enhanced with Validation & Diagnostics)
+## 🟩 User Query & Answer Flow (Enhanced with Advanced Validation)
 
 ```mermaid
 flowchart TD
-    A[User submits question in chat input box] --> A1{RAG Disabled?}
-    A1 -->|Yes| A2[Direct LLM Query Without RAG]
-    A1 -->|No| B[core/ui_components.py: Chat UI captures input and triggers processing]
-    A2 --> I[Chat UI renders response]
-    B --> C[System checks if RAG pipeline is ready]
-    C --> D[core/query/query_intent_classifier.py: Intent classifier analyzes user's query with confidence scoring]
-    D --> D1[Extract query context hints based on intent]
-    D1 --> E[core/query/retrieval_logic.py: Enhanced contamination-free query rewriting with intent awareness]
-    E --> F[Multi-fallback retrieval strategy]
+    %% Color Definitions
+    classDef userInput fill:#6f42c1,stroke:#4e2a8e,color:#fff,stroke-width:2px,font-weight:bold
+    classDef process fill:#20b2aa,stroke:#008b8b,color:#fff,stroke-width:2px
+    classDef decision fill:#ffa500,stroke:#cc8400,color:#000,stroke-width:3px,font-weight:bold
+    classDef validation fill:#28a745,stroke:#1e7e34,color:#fff,stroke-width:2px
+    classDef fallback fill:#17a2b8,stroke:#117a8b,color:#fff,stroke-width:2px
+
+    %% User Input
+    A["💬 User submits question<br/>in chat input box"]:::userInput
     
-    F --> F1[Try rewritten query]
-    F1 --> F2{Results found?}
-    F2 -->|No| F3[Try original query]
-    F3 --> F4{Results found?}
-    F4 -->|No| F5[Try key terms extraction]
-    F5 --> G[Retrieve relevant documents]
-    F2 -->|Yes| G
-    F4 -->|Yes| G
+    %% RAG Toggle Check
+    A --> B{"🔘 RAG Disabled?"}:::decision
+    B -->|"❌ Yes"| C["🤖 Direct LLM Query<br/>Without RAG"]:::process
+    B -->|"✅ No"| D["🎯 core/ui_components.py:<br/>Chat UI captures input"]:::process
     
-    G --> G1[Phase 3 Enhanced Context Assembly with multi-layer layers]
-    G1 --> G2[core/context/context_builder.py: Multi-layered Context Building: hierarchical, call flow, inheritance, impact]
-    G2 --> G3[Context Ranking by Intent Relevance]
-    G3 --> H[core/query/chat_handler.py: Chat handler uses RetrievalQA with enhanced context]
-    H --> H1[core/query/prompt_router.py: Document re-ranking by intent]
-    H1 --> H2[core/query/retrieval_logic.py: Impact analysis if applicable]
-    H2 --> H3[Answer generation]
-    H3 --> H4[core/query/answer_validation_handler.py: Answer validation & pipeline diagnostics via AnswerValidationHandler]
-    H4 --> I[Chat UI renders response with metadata, sources, and quality feedback]
+    C --> E["💬 Chat UI renders<br/>response"]:::process
+    
+    %% Core Processing Pipeline
+    D --> F["✅ System checks if<br/>RAG pipeline ready"]:::process
+    F --> G["🎯 core/query/query_intent_classifier.py:<br/>Intent Analysis & Confidence"]:::process
+    G --> H["📝 Extract query context<br/>hints based on intent"]:::process
+    H --> I["🔄 core/query/retrieval_logic.py:<br/>Contamination-free Query Rewriting"]:::process
+    
+    %% Multi-Strategy Retrieval
+    I --> J["🎯 Multi-fallback<br/>Retrieval Strategy"]:::process
+    J --> K["🔍 Strategy 1:<br/>Try Rewritten Query"]:::process
+    K --> L{"📊 Results Found?"}:::decision
+    
+    L -->|"❌ No"| M["🔄 Strategy 2:<br/>Try Original Query"]:::fallback
+    L -->|"✅ Yes"| N["📄 Retrieve Relevant<br/>Documents"]:::process
+    
+    M --> O{"📊 Results Found?"}:::decision
+    O -->|"❌ No"| P["🔑 Strategy 3:<br/>Key Terms Extraction"]:::fallback
+    O -->|"✅ Yes"| N
+    P --> N
+    
+    %% Context Assembly
+    N --> Q["🏗️ Phase 3: Enhanced Context<br/>Assembly with Multi-layers"]:::process
+    Q --> R["🎯 core/context/context_builder.py:<br/>Multi-layered Context Building"]:::process
+    R --> S["📊 Context Ranking<br/>by Intent Relevance"]:::process
+    S --> T["🤖 core/query/chat_handler.py:<br/>RetrievalQA with Enhanced Context"]:::process
+    
+    %% Final Processing
+    T --> U["📋 core/query/prompt_router.py:<br/>Document Re-ranking by Intent"]:::process
+    U --> V["🎯 core/query/retrieval_logic.py:<br/>Impact Analysis if Applicable"]:::process
+    V --> W["✨ Answer Generation"]:::process
+    W --> X["✅ core/query/answer_validation_handler.py:<br/>Answer Validation & Diagnostics"]:::validation
+    X --> E
+    
+    %% Feedback Loop
+    E --> Y["📝 Prompt User<br/>for Feedback"]:::userInput
 ```
 
-## 🟨 Enhanced Provider Selection Flow
+## 🟨 Enhanced Provider Selection Flow (Detailed Configuration)
 
 ```mermaid
 flowchart TD
-    A[User opens application] --> B[core/ui_components.py: Sidebar Configuration Panel]
-    B --> C{Provider Selected?}
-    C -->|No| D[Show Provider Selection: Choose Provider...]
-    D --> E[User selects Ollama Local or Cloud OpenAI]
+    %% Color Definitions
+    classDef user fill:#6f42c1,stroke:#4e2a8e,color:#fff,stroke-width:2px,font-weight:bold
+    classDef system fill:#20b2aa,stroke:#008b8b,color:#fff,stroke-width:2px
+    classDef decision fill:#ffa500,stroke:#cc8400,color:#000,stroke-width:3px,font-weight:bold
+    classDef error fill:#dc3545,stroke:#a52722,color:#fff,stroke-width:2px,font-weight:bold
+    classDef success fill:#28a745,stroke:#1e7e34,color:#fff,stroke-width:2px
+
+    %% Application Start
+    A["🚀 User Opens<br/>Application"]:::user
+    A --> B["🎛️ core/ui_components.py:<br/>Sidebar Configuration Panel"]:::system
+    B --> C{"🔌 Provider Selected?"}:::decision
     
-    E --> F{Provider Type?}
-    F -->|Ollama| G[Configure Ollama Settings]
-    F -->|Cloud| H[Configure Cloud Settings]
+    %% Provider Selection
+    C -->|"❌ No"| D["❓ Show Provider Selection:<br/>Choose Provider..."]:::user
+    C -->|"✅ Yes"| E["✅ Proceed with<br/>Configuration"]:::system
     
-    G --> G1[core/config/model_config.py: Set Ollama Model: llama3.1:latest]
-    G1 --> G2[Set Ollama Endpoint: http://localhost:11434]
-    G2 --> G3[Set Embedding Model: nomic-embed-text:latest]
-    G3 --> I[Validate Ollama Connection]
+    D --> F["👤 User selects Ollama Local<br/>or Cloud OpenAI"]:::user
+    F --> G{"🤔 Provider Type?"}:::decision
     
-    H --> H1[Set Cloud Endpoint from ENV or Custom]
-    H1 --> H2[Validate CLOUD_API_KEY environment variable]
-    H2 --> H3[Set Cloud Model: gpt-4.1]
-    H3 --> H4[Set Local Ollama for Embeddings]
-    H4 --> J[core/config/custom_llm_client.py: Validate Cloud API Connection]
+    %% Ollama Configuration
+    G -->|"🏠 Ollama"| H["⚙️ Configure Ollama<br/>Settings"]:::system
+    H --> I["🧠 core/config/model_config.py:<br/>Set Model: llama3.1:latest"]:::system
+    I --> J["🔗 Set Endpoint:<br/>http://localhost:11434"]:::system
+    J --> K["📊 Set Embedding Model:<br/>nomic-embed-text:latest"]:::system
+    K --> L["✅ Validate Ollama<br/>Connection"]:::system
     
-    I --> K{Connection Valid?}
-    J --> K
-    K -->|Yes| L[core/config/model_config.py: ModelConfig.set_provider configured]
-    K -->|No| M[Show Connection Error & Retry Options]
-    M --> D
-    L --> N[Provider Ready for RAG Operations]
+    %% Cloud Configuration  
+    G -->|"☁️ Cloud"| M["🌐 Configure Cloud<br/>Settings"]:::system
+    M --> N["🔗 Set Cloud Endpoint<br/>from ENV or Custom"]:::system
+    N --> O["🔑 Validate CLOUD_API_KEY<br/>environment variable"]:::system
+    O --> P["🤖 Set Cloud Model:<br/>gpt-4.1"]:::system
+    P --> Q["🏠 Set Local Ollama<br/>for Embeddings"]:::system
+    Q --> R["✅ core/config/custom_llm_client.py:<br/>Validate Cloud API Connection"]:::system
+    
+    %% Validation Results
+    L --> S{"🔍 Connection Valid?"}:::decision
+    R --> S
+    S -->|"✅ Yes"| T["⚙️ core/config/model_config.py:<br/>ModelConfig.set_provider()"]:::success
+    S -->|"❌ No"| U["🚨 Show Connection Error<br/>& Retry Options"]:::error
+    U --> D
+    T --> V["🎉 Provider Ready<br/>for RAG Operations"]:::success
 ```
 
-## 🟪 Process Management & UI Protection Flow
+## 🟪 Process Management & UI Protection Flow (Enhanced Safety)
 
 ```mermaid
 flowchart TD
-    A[RAG Build Process Started] --> B[core/process_manager.py: ProcessManager.start_rag_build]
-    B --> C[Record build start time and process ID]
-    C --> D[Disable UI elements that could interfere]
-    D --> E[Set building flag in session state]
-    E --> F[Show build progress with real-time updates]
+    %% Color Definitions
+    classDef process fill:#20b2aa,stroke:#008b8b,color:#fff,stroke-width:2px
+    classDef decision fill:#ffa500,stroke:#cc8400,color:#000,stroke-width:3px,font-weight:bold
+    classDef error fill:#dc3545,stroke:#a52722,color:#fff,stroke-width:2px,font-weight:bold
+    classDef success fill:#28a745,stroke:#1e7e34,color:#fff,stroke-width:2px
+
+    %% Process Start
+    A["🚧 RAG Build Process<br/>Started"]:::process
+    A --> B["📝 core/process_manager.py:<br/>ProcessManager.start_rag_build()"]:::process
+    B --> C["⏰ Record build start time<br/>and process ID"]:::process
+    C --> D["🚫 Disable UI elements that<br/>could interfere"]:::process
+    D --> E["🏷️ Set building flag<br/>in session state"]:::process
+    E --> F["📊 Show build progress<br/>with real-time updates"]:::process
     
-    F --> G[Monitor build timeout 10 minutes]
-    G --> H{Build timeout exceeded?}
-    H -->|Yes| I[Show timeout warning and force stop option]
-    H -->|No| J{Build completed?}
-    J -->|No| K[Continue monitoring and show progress]
+    %% Monitoring Loop
+    F --> G["⏰ Monitor build timeout<br/>(15 minute limit)"]:::process
+    G --> H{"🚨 Build timeout<br/>exceeded?"}:::decision
+    H -->|"✅ No"| I{"✅ Build completed?"}:::decision
+    H -->|"⚠️ Yes"| J["🚨 Show timeout warning<br/>and force stop option"]:::error
+    
+    %% Completion Path
+    I -->|"❌ No"| K["📈 Continue monitoring<br/>and show progress"]:::process
+    I -->|"✅ Yes"| L["🏁 core/process_manager.py:<br/>ProcessManager.finish_rag_build()"]:::success
     K --> G
-    J -->|Yes| L[core/process_manager.py: ProcessManager.finish_rag_build]
     
-    I --> M[User can force stop or continue waiting]
-    M --> N{User choice?}
-    N -->|Force Stop| L
-    N -->|Continue| G
+    %% Error Handling
+    J --> M["👤 User can force stop<br/>or continue waiting"]:::process
+    M --> N{"🤔 User choice?"}:::decision
+    N -->|"🛑 Force Stop"| L
+    N -->|"⏳ Continue"| G
     
-    L --> O[Clear building flag from session state]
-    O --> P[Re-enable all UI elements]
-    P --> Q[Clean up process resources]
-    Q --> R[RAG system ready for use]
+    %% Cleanup
+    L --> O["🗑️ Clear building flag<br/>from session state"]:::process
+    O --> P["✅ Re-enable all<br/>UI elements"]:::process
+    P --> Q["🧹 Clean up process<br/>resources"]:::process
+    Q --> R["🎉 RAG system ready<br/>for use"]:::success
 ```
 
-## 🟫 Debug Mode Activation & Tools Flow
+## 🟫 Debug Mode Activation & Tools Flow (Enhanced Developer Experience)
 
 ```mermaid
 flowchart TD
-    A[User in main application] --> B{Debug Mode Enabled?}
-    B -->|No| C[core/ui_components.py: User clicks title button]
-    C --> D[Increment click counter]
-    D --> E{Click count >= 5?}
-    E -->|No| F[Show current click count]
-    E -->|Yes| G[Enable Debug Mode]
-    G --> H[Show success message: Debug mode enabled]
-    H --> I[Reset click counter]
+    %% Color Definitions
+    classDef user fill:#6f42c1,stroke:#4e2a8e,color:#fff,stroke-width:2px,font-weight:bold
+    classDef system fill:#20b2aa,stroke:#008b8b,color:#fff,stroke-width:2px
+    classDef debug fill:#ffd700,stroke:#b8860b,color:#000,stroke-width:2px,font-weight:bold
+    classDef decision fill:#ffa500,stroke:#cc8400,color:#000,stroke-width:3px,font-weight:bold
+
+    %% Debug Activation
+    A["👤 User in main<br/>application"]:::user
+    A --> B{"🔧 Debug Mode<br/>Enabled?"}:::decision
+    B -->|"❌ No"| C["🖱️ core/ui_components.py:<br/>User clicks title button"]:::user
+    B -->|"✅ Yes"| D["🛠️ Show Debug Tools<br/>in Sidebar"]:::debug
     
-    B -->|Yes| J[core/ui_components.py: Show Debug Tools in Sidebar]
-    J --> K[Render Debug Section with Tabs]
-    K --> L[Vector DB Inspector Tab]
-    K --> M[Chunk Analyzer Tab]
-    K --> N[Retrieval Tester Tab]
-    K --> O[Build Status Tab]
-    K --> P[Logs Viewer Tab]
+    %% Click Counter
+    C --> E["🔢 Increment click<br/>counter"]:::system
+    E --> F{"🎯 Click count >= 5?"}:::decision
+    F -->|"❌ No"| G["📊 Show current<br/>click count"]:::system
+    F -->|"✅ Yes"| H["🎉 Enable Debug Mode"]:::debug
     
-    L --> L1[Inspect Vector DB Statistics]
-    L1 --> L2[Show total documents, files, chunk sizes]
-    L2 --> L3[Display file breakdown and clear DB option]
+    G --> I["⏳ Wait for more<br/>clicks"]:::system
+    I --> C
     
-    M --> M1[Select file for chunk analysis]
-    M1 --> M2[Analyze chunks using existing retriever]
-    M2 --> M3[Display chunk content and metadata]
+    H --> J["✅ Show success message:<br/>Debug mode enabled"]:::debug
+    J --> K["🔄 Reset click<br/>counter"]:::system
+    K --> D
     
-    N --> N1[Enter test query for retrieval]
-    N1 --> N2[Test using session state retriever]
-    N2 --> N3[Display relevance scores and results]
+    %% Debug Tools Display
+    D --> L["🎛️ Render Debug Section<br/>with Tabs"]:::debug
+    L --> M["📊 Vector DB<br/>Inspector Tab"]:::debug
+    L --> N["🔍 Chunk Analyzer<br/>Tab"]:::debug
+    L --> O["🧪 Retrieval Tester<br/>Tab"]:::debug
+    L --> P["📈 Build Status<br/>Tab"]:::debug
+    L --> Q["📝 Logs Viewer<br/>Tab"]:::debug
     
-    O --> O1[Show database existence and size]
-    O1 --> O2[Display tracking files and git status]
+    %% Individual Tool Details
+    M --> M1["🔍 Inspect Vector DB<br/>Statistics"]:::debug
+    M1 --> M2["📊 Show total documents,<br/>files, chunk sizes"]:::debug
+    M2 --> M3["📁 Display file breakdown<br/>and clear DB option"]:::debug
     
-    P --> P1[core/logger.py: List available log files]
-    P1 --> P2[Display selected log content with download]
+    N --> N1["📄 Select file for<br/>chunk analysis"]:::debug
+    N1 --> N2["🔬 Analyze chunks using<br/>existing retriever"]:::debug
+    N2 --> N3["📋 Display chunk content<br/>and metadata"]:::debug
+    
+    O --> O1["❓ Enter test query<br/>for retrieval"]:::debug
+    O1 --> O2["🧪 Test using session<br/>state retriever"]:::debug
+    O2 --> O3["📊 Display relevance scores<br/>and results"]:::debug
+    
+    P --> P1["💾 Show database existence<br/>and size"]:::debug
+    P1 --> P2["📊 Display tracking files<br/>and git status"]:::debug
+    
+    Q --> Q1["📝 core/logger.py:<br/>List available log files"]:::debug
+    Q1 --> Q2["📄 Display selected log content<br/>with download option"]:::debug
 ```
 
-## 🟦 Cross-Reference Building & Enhanced Context Flow (Updated)
+## 🆕 Answer Validation & Quality Monitoring Flow (Enhanced Quality Assurance)
 
 ```mermaid
 flowchart TD
-    A[Documents with Enhanced Metadata] --> B[core/context/cross_reference_builder.py: CrossReferenceBuilder.build_cross_references]
-    B --> C[Extract Symbol Definitions]
-    C --> C1[core/context/metadata_extractor.py: Method signatures with parameters and return types]
-    C1 --> C2[Class definitions and interfaces]
-    C2 --> C3[Variable and constant definitions]
+    %% Color Definitions
+    classDef process fill:#20b2aa,stroke:#008b8b,color:#fff,stroke-width:2px
+    classDef validation fill:#28a745,stroke:#1e7e34,color:#fff,stroke-width:2px
+    classDef decision fill:#ffa500,stroke:#cc8400,color:#000,stroke-width:3px,font-weight:bold
+    classDef metrics fill:#17a2b8,stroke:#117a8b,color:#fff,stroke-width:2px
+    classDef alert fill:#dc3545,stroke:#a52722,color:#fff,stroke-width:2px,font-weight:bold
+
+    %% Validation Start
+    A["✨ Answer Generated<br/>by LLM"]:::process
+    A --> B["✅ core/query/answer_validation_handler.py:<br/>AnswerValidationHandler.validate_answer_quality()"]:::validation
+    B --> C["📊 Multi-Metric Quality<br/>Assessment"]:::validation
     
-    C3 --> D[Build Usage Maps]
-    D --> D1[Function call relationships]
-    D1 --> D2[Class instantiation patterns]
-    D2 --> D3[Variable usage tracking]
+    %% Quality Metrics
+    C --> D["🎯 Calculate Relevancy Score<br/>Query/Answer Alignment"]:::metrics
+    D --> E["📋 Calculate Completeness Score<br/>Context Utilization"]:::metrics
+    E --> F["✅ Calculate Accuracy Score<br/>Technical Reference Validation"]:::metrics
+    F --> G["💻 Calculate Code Quality Score<br/>File References, Methods, Patterns"]:::metrics
     
-    D3 --> E[Build Inheritance Relationships]
-    E --> E1[Class hierarchy mapping]
-    E1 --> E2[Interface implementation tracking]
-    E2 --> E3[Abstract class relationships]
+    %% Overall Scoring
+    G --> H["📊 Overall Quality Score<br/>Calculation"]:::validation
+    H --> I{"🏆 Quality Score >= 0.8?"}:::decision
+    I -->|"✅ Yes"| J["🌟 Mark as<br/>HIGH QUALITY"]:::validation
+    I -->|"❌ No"| K{"📊 Quality Score >= 0.6?"}:::decision
+    K -->|"✅ Yes"| L["✅ Mark as<br/>ACCEPTABLE"]:::validation
+    K -->|"❌ No"| M["⚠️ Mark as<br/>NEEDS IMPROVEMENT"]:::alert
     
-    E3 --> F[Detect Design Patterns]
-    F --> F1[Factory Pattern Detection]
-    F1 --> F2[Singleton Pattern Detection]
-    F2 --> F3[Observer Pattern Detection]
-    F3 --> F4[Strategy Pattern Detection]
+    %% Logging
+    J --> N["📝 core/logger.py:<br/>Log Quality Metrics"]:::process
+    L --> N
+    M --> N
     
-    F4 --> G[Generate Statistics]
-    G --> G1[Symbol count and distribution]
-    G1 --> G2[Usage frequency analysis]
-    G2 --> G3[Complexity metrics]
+    %% Pipeline Diagnostics
+    N --> O["🔍 Pipeline Diagnostics<br/>Analysis"]:::validation
+    O --> P["🔤 Entity Preservation Check<br/>in Rewriting"]:::metrics
+    P --> Q["📊 Retrieval Coverage<br/>Analysis"]:::metrics
+    Q --> R["🎯 Context Utilization<br/>Assessment"]:::metrics
     
-    G3 --> H[Save Cross-References to Files]
-    H --> H1[cross_references.json - Main data]
-    H1 --> H2[call_graph_index.json - Call relationships]
-    H2 --> H3[inheritance_index.json - Class hierarchies]
-    H3 --> H4[symbol_usage_index.json - Usage patterns]
+    %% Critical Issues Check
+    R --> S{"🚨 Critical Issues<br/>Found?"}:::decision
+    S -->|"⚠️ Yes"| T["🚨 Generate Quality<br/>Alert"]:::alert
+    S -->|"✅ No"| U["📝 Log Normal<br/>Metrics"]:::process
     
-    H4 --> I[core/context/context_builder.py: Context Builder Loads Cross-Reference Data]
-    I --> J[core/context/cross_reference_query.py: Multi-Strategy Context Assembly Available]
+    %% Alert Handling
+    T --> V["📝 core/logger.py:<br/>Log to quality_alerts.log"]:::alert
+    V --> W["🔧 Generate Fix<br/>Recommendations"]:::validation
+    U --> X["📝 core/logger.py:<br/>Log to quality_metrics.log"]:::process
+    
+    %% Fix Recommendations
+    W --> Y["🔤 Entity Preservation<br/>Fixes if needed"]:::validation
+    Y --> Z["🎯 Retrieval Scope<br/>Improvements if needed"]:::validation
+    Z --> AA["🎯 Context Enhancement<br/>Suggestions if needed"]:::validation
+    
+    %% Completion
+    AA --> BB["✅ Pipeline Diagnosis<br/>Complete"]:::validation
+    X --> BB
+    BB --> CC["📊 Return Quality Assessment<br/>to Chat Handler"]:::process
 ```
 
-## 🟩 Enhanced Query Processing with Fallback Strategies (Updated)
+## 🎨 Key Visual Improvements Made:
 
-```mermaid
-flowchart TD
-    A[User Query Received] --> B[core/query/query_intent_classifier.py: QueryIntentClassifier.classify_intent]
-    B --> C[Intent Classification with Confidence Score]
-    C --> D[core/query/retrieval_logic.py: Query Rewriting with Intent Awareness]
-    D --> E[Multi-Fallback Retrieval Strategy]
-    
-    E --> F[Strategy 1: Rewritten Query]
-    F --> G{Documents Retrieved?}
-    G -->|Yes| M[Sufficient Results Found]
-    G -->|No| H[Strategy 2: Original Query]
-    
-    H --> I{Documents Retrieved?}
-    I -->|Yes| M
-    I -->|No| J[Strategy 3: Key Terms Extraction]
-    
-    J --> K[core/query/retrieval_logic.py: Extract Key Terms from Query]
-    K --> L[Search with Key Terms Only]
-    L --> M
-    
-    M --> N[Phase 3 Enhanced Context Building]
-    N --> N1[core/context/context_builder.py: Select Context Strategies Based on Intent]
-    N1 --> N2{Intent Type?}
-    
-    N2 -->|Overview| O1[Hierarchical Context + Project Structure]
-    N2 -->|Technical| O2[Call Flow Context + Implementation Details]
-    N2 -->|Business Logic| O3[Inheritance Context + Validation Rules]
-    N2 -->|Impact Analysis| O4[Impact Context + Dependency Chains]
-    
-    O1 --> P[Rank Context Layers by Relevance]
-    O2 --> P
-    O3 --> P
-    O4 --> P
-    
-    P --> Q[Format Multi-Layered Context for LLM]
-    Q --> R[core/query/prompt_router.py: Generate Enhanced Query with Context]
-    R --> S[core/config/model_config.py: Send to LLM via Provider Factory]
-    S --> T[core/query/query_intent_classifier.py: Document Re-ranking by Intent]
-    T --> U[Return Answer with Metadata and Sources]
-```
+### 🎯 **Enhanced User Experience:**
+1. **Color Psychology**: Strategic use of colors to convey meaning instantly
+2. **Visual Hierarchy**: Important decisions and critical paths stand out
+3. **Icon Integration**: Emojis provide quick visual cues for different action types
+4. **Grouped Elements**: Related processes are visually connected
+5. **Clear Flow Direction**: Arrows and labels show progression clearly
 
-## 🆕 **New Addition: Answer Validation & Quality Monitoring Flow (2025-09-03)**
+### 🔧 **Technical Improvements:**
+1. **File Path References**: Actual file paths shown for development clarity
+2. **Process Detail**: More descriptive labels explain what each step does
+3. **Error Handling**: Clear visualization of error states and recovery paths
+4. **Timeout Management**: Visual representation of safety mechanisms
+5. **Quality Metrics**: Detailed quality assurance workflow visualization
 
-```mermaid
-flowchart TD
-    A[Answer Generated by LLM] --> B[core/query/answer_validation_handler.py: AnswerValidationHandler.validate_answer_quality]
-    B --> C[Multi-Metric Quality Assessment]
-    
-    C --> C1[Calculate Relevancy Score - Query/Answer Alignment]
-    C1 --> C2[Calculate Completeness Score - Context Utilization]
-    C2 --> C3[Calculate Accuracy Score - Technical Reference Validation]
-    C3 --> C4[Calculate Code Quality Score - File References, Methods, Patterns]
-    
-    C4 --> D[Overall Quality Score Calculation]
-    D --> E{Quality Score >= 0.8?}
-    E -->|Yes| F[Mark as HIGH QUALITY]
-    E -->|No| G{Quality Score >= 0.6?}
-    G -->|Yes| H[Mark as ACCEPTABLE]
-    G -->|No| I[Mark as NEEDS IMPROVEMENT]
-    
-    F --> J[core/logger.py: Log Quality Metrics]
-    H --> J
-    I --> J
-    
-    J --> K[Pipeline Diagnostics Analysis]
-    K --> K1[Entity Preservation Check in Rewriting]
-    K1 --> K2[Retrieval Coverage Analysis]
-    K2 --> K3[Context Utilization Assessment]
-    
-    K3 --> L{Critical Issues Found?}
-    L -->|Yes| M[Generate Quality Alert]
-    L -->|No| N[Log Normal Metrics]
-    
-    M --> M1[core/logger.py: Log to quality_alerts.log]
-    M1 --> O[Generate Fix Recommendations]
-    N --> N1[core/logger.py: Log to quality_metrics.log]
-    
-    O --> O1[Entity Preservation Fixes if needed]
-    O1 --> O2[Retrieval Scope Improvements if needed]
-    O2 --> O3[Context Enhancement Suggestions if needed]
-    
-    O3 --> P[Pipeline Diagnosis Complete]
-    N1 --> P
-    P --> Q[Return Quality Assessment to Chat Handler]
-```
-
-## 🟨 Feature Toggle Management Flow (Updated)
-
-```mermaid
-flowchart TD
-    A[Application Startup] --> B[core/config/feature_toggle_manager.py: FeatureToggleManager initialization]
-    B --> C[Load core/config/featureToggle.json configuration]
-    C --> D[Parse feature definitions and version requirements]
-    D --> E[Get current application version from pyproject.toml]
-    
-    E --> F[Feature Request: is_enabled check]
-    F --> G{Feature exists in config?}
-    G -->|No| H[Return False - Feature not defined]
-    G -->|Yes| I[Check enabled flag]
-    
-    I --> J{Feature enabled in config?}
-    J -->|No| K[Return False - Feature disabled]
-    J -->|Yes| L[Check version requirement]
-    
-    L --> M{App version >= min version?}
-    M -->|No| N[Return False - Version too low]
-    M -->|Yes| O[Return True - Feature enabled]
-    
-    H --> P[core/logger.py: Log toggle decision with reason]
-    K --> P
-    N --> P
-    O --> P
-    
-    P --> Q[Feature toggle decision complete]
-```
-
-## **Key Enhancements Reflected in Updated Charts:**
-
-### **🔄 Updated File Paths:**
-1. **Context Processing**: All context-related files now in `core/context/` folder
-2. **Query Processing**: All query-related files now in `core/query/` folder
-3. **Configuration**: All config files now in `core/config/` folder
-4. **Renamed Files**: `build_rag.py` → `core/index_builder.py`
-
-### **🆕 New Components Added:**
-1. **core/config/custom_llm_client.py**: Cloud provider LLM client with system/user prompt support
-2. **core/context/cross_reference_builder.py**: Cross-reference mapping and call graph generation
-3. **core/context/cross_reference_query.py**: Fast cross-reference querying interface
-4. **core/query/answer_validation_handler.py**: Complete quality assessment pipeline
-5. **core/query/retrieval_logic.py**: Modular retrieval operations with intelligent fallbacks
-6. **core/query/prompt_router.py**: Intent-specific prompt templates
-
-### **🏗️ Architectural Improvements:**
-1. **Modular Organization**: Clean separation of concerns across specialized folders
-2. **Enhanced Maintainability**: Easier navigation and component isolation
-3. **Clear Dependencies**: Well-defined interfaces between modules
-4. **Scalable Structure**: Easy to add new features and components
-
-### **🔧 Enhanced Features:**
-1. **Quality Monitoring**: Real-time validation and pipeline diagnostics
-2. **Multi-Provider Support**: Seamless switching between Ollama and cloud providers
-3. **Advanced Context Assembly**: Multi-layered context building with cross-references
-4. **Feature Toggle System**: Runtime control over advanced capabilities
-
-These updated Mermaid charts now accurately reflect the refactored file structure and enhanced capabilities of the RAG Codebase QA Tool, maintaining all functionality while improving organization and maintainability.
+### 📊 **Professional Presentation:**
+1. **Consistent Styling**: Uniform stroke widths and color schemes
+2. **Readable Text**: Font weights and colors optimized for clarity
+3. **Logical Grouping**: Related elements visually clustered
+4. **Progressive Disclosure**: Complex flows broken into digestible sections
+5. **Status Indicators**: Clear success/failure/warning visual cues
+These enhanced diagrams provide a much better user experience for understanding the complex RAG system architecture, making it easier for developers, stakeholders, and users to quickly grasp the system's functionality and flow patterns.
 
 Sources
-[1] MERMAID_CHART.md https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/00d9aa19-2970-4026-9618-689627857795/MERMAID_CHART.md
+[1] chunker_factory.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/7706ede4-15eb-49a9-8e8d-3ad8e8f63277/chunker_factory.py
+[2] metadata_extractor.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/031b4497-b84f-4ec3-80b1-daec5eedff9f/metadata_extractor.py
+[3] git_hash_tracker.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/98244fbb-3588-4b54-a813-779486443c6b/git_hash_tracker.py
+[4] hierarchical_indexer.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/cc9acc51-e6d2-47da-a0d8-89821f010505/hierarchical_indexer.py
+[5] cross_reference_query.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/d9653741-c463-41c8-a547-51abc876ebc3/cross_reference_query.py
+[6] cross_reference_builder.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/28cf8496-f400-46bb-a5e3-6d0fca259ed3/cross_reference_builder.py
+[7] context_builder.py https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/bea8b7e2-09ca-44bb-8f94-391904acdaac/context_builder.py
+[8] analysis.txt https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/3ff81d3b-b8c6-4d21-bc1b-868a4c54a50d/analysis.txt
