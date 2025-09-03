@@ -48,25 +48,31 @@ source-project/                    # User's source code project
 codebase-qa/                          # Core RAG tool directory
 ├── core/                             # Core RAG functionality
 │   ├── app.py                        # 🔄 UPDATED: Streamlit application entry point
-│   ├── build_rag.py                  # Main RAG index builder with semantic chunking
-│   ├── chat_handler.py               # 🔄 UPDATED: Streamlined chat processing with validation delegation
-│   ├── answer_validation_handler.py # 🆕 NEW: Dedicated answer validation and diagnostics
-│   ├── retrieval_logic.py            # 🆕 NEW: Modular retrieval operations and strategies
-│   ├── chunker_factory.py            # 🆕 ENHANCED: Metadata-aware semantic chunking strategies
-│   ├── config/                       # Configuration management
-│   │   ├── config.py                 # Multi-language project configuration
-│   │   ├── model_config.py           # Centralized LLM/embedding configuration
-│   │   └── feature_toggle_manager.py# Feature toggle system
-│   ├── context_builder.py            # 🆕 ENHANCED: Multi-layered context assembly with cross-references
-│   ├── git_hash_tracker.py           # File change tracking (Git + hash fallback)
-│   ├── hierarchical_indexer.py       # 🆕 ENHANCED: Multi-level indexing with missing anchor diagnostics
-│   ├── logger.py                     # Centralized logging with session rotation
-│   ├── metadata_extractor.py         # 🆕 ENHANCED: Rich metadata extraction (8+ languages, design patterns)
-│   ├── process_manager.py            # Process state management and UI protection
-│   ├── query_intent_classifier.py    # 🆕 ENHANCED: Advanced intent classification with 5-level complexity support
-│   ├── prompt_router.py              # 🆕 NEW: Intent-specific prompt templates with contamination prevention
+│   ├── index_builder.py              # 🔄 UPDATED: Main RAG index builder with semantic chunking (formerly build_rag.py)
 │   ├── rag_manager.py                # 🔄 UPDATED: Cleaned session lifecycle and provider management
-│   └── ui_components.py              # Streamlit UI components and interactions
+│   ├── ui_components.py              # Streamlit UI components and interactions
+│   ├── process_manager.py            # Process state management and UI protection
+│   ├── logger.py                     # Centralized logging with session rotation
+│   ├── context/                      # 🆕 NEW FOLDER: Context processing and semantic understanding
+│   │   ├── chunker_factory.py       # 🆕 ENHANCED: Metadata-aware semantic chunking strategies
+│   │   ├── metadata_extractor.py    # 🆕 ENHANCED: Rich metadata extraction (8+ languages, design patterns)
+│   │   ├── git_hash_tracker.py      # File change tracking (Git + hash fallback)
+│   │   ├── hierarchical_indexer.py  # 🆕 ENHANCED: Multi-level indexing with missing anchor diagnostics
+│   │   ├── context_builder.py       # 🆕 ENHANCED: Multi-layered context assembly with cross-references
+│   │   ├── cross_reference_builder.py # 🆕 NEW: Cross-reference mapping and call graph generation
+│   │   └── cross_reference_query.py # 🆕 NEW: Fast cross-reference querying interface
+│   ├── query/                        # 🆕 NEW FOLDER: Query processing and response generation
+│   │   ├── chat_handler.py           # 🔄 UPDATED: Streamlined chat processing with validation delegation
+│   │   ├── answer_validation_handler.py # 🆕 NEW: Dedicated answer validation and diagnostics
+│   │   ├── retrieval_logic.py        # 🆕 NEW: Modular retrieval operations and strategies
+│   │   ├── query_intent_classifier.py # 🆕 ENHANCED: Advanced intent classification with 5-level complexity support
+│   │   └── prompt_router.py          # 🆕 NEW: Intent-specific prompt templates with contamination prevention
+│   └── config/                       # 🆕 NEW FOLDER: Configuration management
+│       ├── config.py                 # Multi-language project configuration
+│       ├── model_config.py           # Centralized LLM/embedding configuration
+│       ├── custom_llm_client.py      # 🆕 NEW: Cloud provider LLM client with system/user prompt support
+│       ├── feature_toggle_manager.py # Feature toggle system
+│       └── featureToggle.json        # Feature toggle configuration file
 ├── debug_tools/                      # Testing and diagnostic utilities
 ├── cli.py                            # Command line interface
 └── requirements.txt                  # Python dependencies
@@ -112,7 +118,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **Primary Application Entry Point**
 
-#### `app.py` - Streamlit Application Orchestrator
+#### `core/app.py` - Streamlit Application Orchestrator
 **Primary Responsibilities:**
 - Serves as the main entry point for the Streamlit web interface
 - Manages session initialization and global logging setup
@@ -137,7 +143,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **Core Query Processing Engine**
 
-#### `chat_handler.py` - Multi-Phase Query Processing Orchestrator
+#### `core/query/chat_handler.py` - Multi-Phase Query Processing Orchestrator
 **Primary Responsibilities:**
 - Orchestrates the complete query processing pipeline from input to response
 - Manages intent classification, query rewriting, document retrieval, and answer generation
@@ -151,8 +157,9 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 3. **Multi-Strategy Retrieval**: Attempts rewritten query → original query → key terms
 4. **Metadata-Driven Reranking**: Scores documents using rich metadata
 5. **Context Assembly**: Builds multi-layered context from retrieved documents
-6. **Answer Generation**: Creates response using intent-specific prompts
-7. **Quality Validation**: Assesses answer quality and pipeline performance
+6. **Prompt Generation**: Creates intent-specific prompts preserving original questions
+7. **Answer Generation**: Creates response using assembled context and specialized prompts
+8. **Quality Validation**: Assesses answer quality and pipeline performance
 
 **Recent Improvements (2025-09-03):**
 - Refactored to delegate validation logic to dedicated `AnswerValidationHandler`
@@ -160,7 +167,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - Enhanced diagnostic logging with comprehensive pipeline tracking
 - Improved error handling with graceful fallback mechanisms
 
-#### `answer_validation_handler.py` - Dedicated Quality Validation System *(New Module - 2025-09-03)*
+#### `core/query/answer_validation_handler.py` - Dedicated Quality Validation System *(New Module - 2025-09-03)*
 **Primary Responsibilities:**
 - Performs comprehensive answer quality assessment using multiple metrics
 - Conducts pipeline diagnostics to identify bottlenecks and issues
@@ -185,7 +192,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - Retrieval coverage percentages
 - Critical issue alerts with severity levels
 
-#### `retrieval_logic.py` - Modular Retrieval Operations System *(New Module - 2025-09-03)*
+#### `core/query/retrieval_logic.py` - Modular Retrieval Operations System *(New Module - 2025-09-03)*
 **Primary Responsibilities:**
 - Manages all document retrieval strategies and fallback mechanisms
 - Creates and configures enhanced retrievers (MultiQueryRetriever support)
@@ -207,7 +214,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **Intent Classification & Query Understanding**
 
-#### `query_intent_classifier.py` - Advanced Intent Detection System
+#### `core/query/query_intent_classifier.py` - Advanced Intent Detection System
 **Primary Responsibilities:**
 - Classifies user queries into specific intent categories using regex patterns
 - Provides confidence scoring for classification accuracy
@@ -231,7 +238,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - Fallback mechanisms for ambiguous queries
 - Support for questionnaire complexity levels 1-5
 
-#### `prompt_router.py` - Intent-Specific Prompt Generation
+#### `core/query/prompt_router.py` - Intent-Specific Prompt Generation
 **Primary Responsibilities:**
 - Maintains registry of intent-specific prompt templates
 - Generates optimized prompts for different LLM providers (Ollama vs Cloud)
@@ -247,7 +254,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **Context Assembly & Information Architecture**
 
-#### `context_builder.py` - Multi-Layered Context Construction
+#### `core/context/context_builder.py` - Multi-Layered Context Construction
 **Primary Responsibilities:**
 - Builds comprehensive context from retrieved documents using multiple strategies
 - Integrates rich metadata, cross-references, and hierarchical relationships
@@ -266,7 +273,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - Ranks context layers based on query intent relevance
 - Formats context with metadata enrichment for LLM consumption
 
-#### `metadata_extractor.py` - Rich Code Metadata Extraction
+#### `core/context/metadata_extractor.py` - Rich Code Metadata Extraction
 **Primary Responsibilities:**
 - Extracts comprehensive metadata from code chunks across multiple programming languages
 - Identifies design patterns, architectural components, and code relationships
@@ -282,7 +289,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - **API Usage**: HTTP clients, database operations, REST API patterns
 - **Business Logic**: Validation rules, workflow patterns, calculation logic
 
-#### `hierarchical_indexer.py` - Multi-Level Code Structure Indexing
+#### `core/context/hierarchical_indexer.py` - Multi-Level Code Structure Indexing
 **Primary Responsibilities:**
 - Creates hierarchical indexes of codebase structure at multiple levels
 - Organizes code components by architectural layers and functional groups
@@ -295,9 +302,23 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - **UI Level**: Screens, navigation flows, UI components
 - **API Level**: Endpoints, database operations, external integrations
 
+#### `core/context/cross_reference_builder.py` - Cross-Reference Mapping System *(New Module)*
+**Primary Responsibilities:**
+- Builds comprehensive cross-reference maps for Level 2-4 query capabilities
+- Creates usage maps, call graphs, dependency chains, and invocation counts
+- Handles complex inheritance relationships and interface implementations
+- Generates design pattern instances and architectural insights
+
+#### `core/context/cross_reference_query.py` - Cross-Reference Query Interface *(New Module)*
+**Primary Responsibilities:**
+- Fast querying interface for cross-reference data
+- Enables Level 2-4 query capabilities with optimized lookups
+- Provides symbol definitions, usage counts, and relationship queries
+- Supports advanced architectural analysis queries
+
 ### **Data Processing & Management**
 
-#### `build_rag.py` - RAG Index Construction Engine
+#### `core/index_builder.py` - RAG Index Construction Engine *(Renamed from build_rag.py)*
 **Primary Responsibilities:**
 - Orchestrates the complete RAG index building process
 - Manages semantic chunking with metadata extraction
@@ -321,7 +342,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - Comprehensive error handling and recovery
 - Support for multiple programming languages
 
-#### `chunker_factory.py` - Semantic Code Chunking
+#### `core/context/chunker_factory.py` - Semantic Code Chunking
 **Primary Responsibilities:**
 - Implements intelligent code chunking strategies based on file types
 - Maintains semantic coherence while respecting size limits
@@ -334,7 +355,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - **Module-Based**: Handles imports, exports, and module structure
 - **Hybrid Approach**: Combines strategies based on code patterns
 
-#### `rag_manager.py` - RAG Lifecycle Management
+#### `core/rag_manager.py` - RAG Lifecycle Management
 **Primary Responsibilities:**
 - Manages RAG system lifecycle from initialization to cleanup
 - Controls vector store creation, loading, and persistence
@@ -355,7 +376,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **Configuration & System Management**
 
-#### `model_config.py` - Centralized Model Configuration
+#### `core/config/model_config.py` - Centralized Model Configuration
 **Primary Responsibilities:**
 - Manages LLM and embedding model configurations across providers
 - Provides unified interface for Ollama and cloud-based models
@@ -368,7 +389,14 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - **Embedding Models**: Consistent 768D vector dimensions across all operations
 - **Provider Abstraction**: Seamless switching between local and cloud LLMs
 
-#### `config/config.py` - Project Configuration Management
+#### `core/config/custom_llm_client.py` - Cloud Provider LLM Client *(New Module)*
+**Primary Responsibilities:**
+- Langchain-compatible OpenAI client with system/user prompt separation
+- Handles cloud provider communication with proper error handling
+- Supports both single prompt (Ollama) and system/user prompt (Cloud) formats
+- Provides async support and timeout management
+
+#### `core/config/config.py` - Project Configuration Management
 **Primary Responsibilities:**
 - Manages project-specific settings and file patterns
 - Defines supported languages and file extensions
@@ -381,7 +409,14 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - **Python**: Django, Flask, FastAPI applications
 - **Web**: HTML/CSS/JS frontend projects
 
-#### `git_hash_tracker.py` - Change Detection & Tracking
+#### `core/config/feature_toggle_manager.py` - Feature Toggle System
+**Primary Responsibilities:**
+- Manages runtime feature toggles for advanced capabilities
+- Provides environment-driven configuration with zero hardcoded paths
+- Supports version-based feature rollouts
+- Enables safe deployment of experimental features
+
+#### `core/context/git_hash_tracker.py` - Change Detection & Tracking
 **Primary Responsibilities:**
 - Monitors file changes using git commits or hash comparison
 - Determines which files need reprocessing for incremental updates
@@ -390,7 +425,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **User Interface & Interaction**
 
-#### `ui_components.py` - Modular UI Component System
+#### `core/ui_components.py` - Modular UI Component System
 **Primary Responsibilities:**
 - Renders all Streamlit UI components with consistent styling
 - Manages sidebar configuration and project selection
@@ -403,7 +438,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 - **Debug Tools**: Vector DB inspector, chunk analyzer, retrieval tester
 - **Status Display**: Build progress, system health, feature toggles
 
-#### `process_manager.py` - Process State Management
+#### `core/process_manager.py` - Process State Management
 **Primary Responsibilities:**
 - Manages long-running operations like RAG index building
 - Provides UI state protection during processing
@@ -412,7 +447,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 
 ### **Logging & Diagnostics**
 
-#### `logger.py` - Centralized Logging System
+#### `core/logger.py` - Centralized Logging System
 **Primary Responsibilities:**
 - Provides unified logging interface across all modules
 - Manages log file rotation and organization
@@ -432,29 +467,29 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 ## 🔄 Complete System Workflow
 
 ### **Phase 1: Initialization & Setup**
-1. **Application Startup**: `app.py` initializes Streamlit interface and logging
-2. **Configuration Loading**: User selects project type and LLM provider
-3. **Session Preparation**: `rag_manager.py` initializes session state and components
+1. **Application Startup**: `core/app.py` initializes Streamlit interface and logging
+2. **Configuration Loading**: User selects project type and LLM provider via `core/config/`
+3. **Session Preparation**: `core/rag_manager.py` initializes session state and components
 
 ### **Phase 2: RAG Index Preparation**
-1. **Change Detection**: `git_hash_tracker.py` determines which files need processing
-2. **File Processing**: `build_rag.py` orchestrates chunking and metadata extraction
+1. **Change Detection**: `core/context/git_hash_tracker.py` determines which files need processing
+2. **File Processing**: `core/index_builder.py` orchestrates chunking and metadata extraction
 3. **Vector Creation**: Code chunks are embedded using consistent 768D vectors
 4. **Database Storage**: ChromaDB stores vectors with rich metadata
 5. **Index Validation**: System verifies completeness and quality
 
 ### **Phase 3: Query Processing Pipeline**
 1. **Query Input**: User submits question via chat interface
-2. **Intent Classification**: `query_intent_classifier.py` determines query purpose and complexity
-3. **Query Rewriting**: `retrieval_logic.py` produces contamination-free search terms
+2. **Intent Classification**: `core/query/query_intent_classifier.py` determines query purpose and complexity
+3. **Query Rewriting**: `core/query/retrieval_logic.py` produces contamination-free search terms
 4. **Multi-Strategy Retrieval**: Documents retrieved using enhanced, fallback, and key-term strategies
-5. **Metadata Reranking**: `chat_handler.py` scores documents using rich metadata
-6. **Context Assembly**: `context_builder.py` creates multi-layered context from top documents
-7. **Prompt Generation**: `prompt_router.py` creates intent-specific prompts preserving original questions
+5. **Metadata Reranking**: `core/query/chat_handler.py` scores documents using rich metadata
+6. **Context Assembly**: `core/context/context_builder.py` creates multi-layered context from top documents
+7. **Prompt Generation**: `core/query/prompt_router.py` creates intent-specific prompts preserving original questions
 8. **Answer Generation**: LLM produces response using assembled context and specialized prompts
 
 ### **Phase 4: Quality Validation & Monitoring** *(Enhanced 2025-09-03)*
-1. **Answer Validation**: `answer_validation_handler.py` assesses response quality using multiple metrics
+1. **Answer Validation**: `core/query/answer_validation_handler.py` assesses response quality using multiple metrics
 2. **Pipeline Diagnostics**: System analyzes rewriting quality and retrieval effectiveness
 3. **Quality Logging**: Metrics and alerts stored for monitoring and improvement
 4. **Fix Recommendations**: System generates actionable suggestions for enhancement
@@ -505,7 +540,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 ### **Initial Setup**
 1. **Install Dependencies**: Ensure all required packages are installed
 2. **Configure LLM Provider**: Set up either Ollama locally or cloud API credentials
-3. **Launch Application**: Run `streamlit run app.py` to start the interface
+3. **Launch Application**: Run `streamlit run core/app.py` to start the interface
 4. **Select Project**: Choose project type and specify codebase directory
 
 ### **First-Time RAG Building**
@@ -560,8 +595,8 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 **Detection**: Pipeline diagnostics revealed entity preservation rates as low as 0% in some queries, causing critical retrieval failures.
 
 **Solution**: 
-- Implemented contamination-free query rewriting with strict output formatting
-- Added entity preservation monitoring in `answer_validation_handler.py`
+- Implemented contamination-free query rewriting with strict output formatting in `core/query/retrieval_logic.py`
+- Added entity preservation monitoring in `core/query/answer_validation_handler.py`
 - Enhanced regex patterns to maintain technical terms during rewriting
 - Created multi-strategy retrieval fallback to original queries when rewriting fails
 
@@ -573,7 +608,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 **Detection**: Quality monitoring revealed retrieval coverage rates as low as 20% for complex queries.
 
 **Solution**:
-- Implemented multi-strategy retrieval in `retrieval_logic.py` with three fallback levels
+- Implemented multi-strategy retrieval in `core/query/retrieval_logic.py` with three fallback levels
 - Added key term extraction for programming-specific vocabulary
 - Enhanced MultiQueryRetriever integration for query expansion
 - Implemented adaptive retrieval scope adjustment based on results
@@ -586,7 +621,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 **Detection**: Manual review revealed inconsistent answer quality without systematic measurement.
 
 **Solution**:
-- Created dedicated `answer_validation_handler.py` for multi-metric quality assessment
+- Created dedicated `core/query/answer_validation_handler.py` for multi-metric quality assessment
 - Implemented relevancy, completeness, accuracy, and code-specific scoring
 - Added real-time quality alerts for critical issues
 - Created actionable improvement recommendations
@@ -597,7 +632,7 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 **Problem**: Rich metadata extraction occasionally failed with complex nested data structures, causing processing errors.
 
 **Solution**:
-- Enhanced metadata sanitization with comprehensive error handling
+- Enhanced metadata sanitization with comprehensive error handling in `core/index_builder.py`
 - Added safe conversion for sets, lists, and dictionaries
 - Implemented JSON serialization fallbacks for complex objects
 - Created metadata validation and recovery mechanisms
@@ -608,9 +643,10 @@ codebase-qa_<project_type>/           # Generated project-specific data director
 **Problem**: Single large modules made system difficult to maintain, test, and extend.
 
 **Solution** *(2025-09-03)*:
+- Refactored into organized folder structure: `core/context/`, `core/query/`, `core/config/`
 - Split `chat_handler.py` into focused components
-- Created specialized `answer_validation_handler.py` for quality assessment
-- Extracted `retrieval_logic.py` for modular retrieval operations
+- Created specialized `core/query/answer_validation_handler.py` for quality assessment
+- Extracted `core/query/retrieval_logic.py` for modular retrieval operations
 - Implemented clean interfaces between components
 
 **Results**: Improved maintainability, easier testing, and cleaner separation of concerns.
@@ -703,3 +739,4 @@ This tool empowers development teams to understand, maintain, and evolve their c
 *This documentation serves as a complete reference for understanding, maintaining, and extending the RAG Codebase QA Tool. Any AI assistant or developer working with this system should have a comprehensive understanding of its capabilities, architecture, and operational characteristics after reviewing this guide.*
 
 Sources
+[1] README_for_AI_TOOL.md https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/5b813f7b-1274-44e9-aab0-c80363e2b842/README_for_AI_TOOL.md

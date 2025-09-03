@@ -19,7 +19,7 @@ flowchart TD
     E -->|Files Changed| F2[Incremental Rebuild: Process only changed files]
     E -->|No Changes| F3[No Rebuild: Load existing index]
     
-    F1 --> PM1[ProcessManager.start_rag_build]
+    F1 --> PM1[core/process_manager.py: ProcessManager.start_rag_build]
     F2 --> PM1
     PM1 --> PM2[Disable UI During Build]
     PM2 --> PM3[Show Build Progress with Timeout Protection]
@@ -31,18 +31,18 @@ flowchart TD
     G1 --> H1[Clean existing vector DB and clear session state]
     G2 --> H2[Preserve existing database and process changed files]
     
-    H1 --> I[Scan ALL files and apply semantic chunking]
-    H2 --> I2[Scan CHANGED files and apply semantic chunking]
+    H1 --> I[core/index_builder.py: Scan ALL files and apply semantic chunking]
+    H2 --> I2[core/index_builder.py: Scan CHANGED files and apply semantic chunking]
     
-    I --> J[Extract semantic metadata including design patterns, call sites, error handling]
+    I --> J[core/context/metadata_extractor.py: Extract semantic metadata including design patterns, call sites, error handling]
     I2 --> J
     
-    J --> J1[Build Cross-References: symbols, call graphs, inheritance]
+    J --> J1[core/context/cross_reference_builder.py: Build Cross-References: symbols, call graphs, inheritance]
     J1 --> J2[Generate statistics and fingerprint chunks]
-    J2 --> J3[Summarize chunks for relevance]
-    J3 --> J4[Build code relationships and hierarchical index]
+    J2 --> J3[core/context/chunker_factory.py: Summarize chunks for relevance]
+    J3 --> J4[core/context/hierarchical_indexer.py: Build code relationships and hierarchical index]
     J4 --> N1[Phase 3 Enhanced Context Building]
-    N1 --> N2[Multi-strategy Context Assembly incorporating impact analysis]
+    N1 --> N2[core/context/context_builder.py: Multi-strategy Context Assembly incorporating impact analysis]
     N2 --> O[Sanitize chunks for embedding]
     O --> P[Embed chunks via Ollama API with Model Consistency]
     P --> Q1[Store embeddings in NEW Chroma DB]
@@ -50,7 +50,7 @@ flowchart TD
     
     Q1 --> R[Set retriever and QA chain in session state]
     Q2 --> R
-    R --> PM4[ProcessManager.finish_rag_build]
+    R --> PM4[core/process_manager.py: ProcessManager.finish_rag_build]
     PM4 --> PM5[Re-enable UI Elements]
     PM5 --> Z[RAG system is ready for queries]
     
@@ -64,7 +64,7 @@ flowchart TD
     V --> G1
     
     %% Enhanced Git Tracking
-    E --> W[Enhanced Git Tracking: full git diff + working directory]
+    E --> W[core/context/git_hash_tracker.py: Enhanced Git Tracking: full git diff + working directory]
     W --> X{Detect changes between commits}
     X -->|Changes found| F2
     X -->|No changes| F3
@@ -81,12 +81,12 @@ flowchart TD
 flowchart TD
     A[User submits question in chat input box] --> A1{RAG Disabled?}
     A1 -->|Yes| A2[Direct LLM Query Without RAG]
-    A1 -->|No| B[Chat UI captures input and triggers processing]
+    A1 -->|No| B[core/ui_components.py: Chat UI captures input and triggers processing]
     A2 --> I[Chat UI renders response]
     B --> C[System checks if RAG pipeline is ready]
-    C --> D[Intent classifier analyzes user's query with confidence scoring]
+    C --> D[core/query/query_intent_classifier.py: Intent classifier analyzes user's query with confidence scoring]
     D --> D1[Extract query context hints based on intent]
-    D1 --> E[Enhanced contamination-free query rewriting with intent awareness]
+    D1 --> E[core/query/retrieval_logic.py: Enhanced contamination-free query rewriting with intent awareness]
     E --> F[Multi-fallback retrieval strategy]
     
     F --> F1[Try rewritten query]
@@ -99,13 +99,13 @@ flowchart TD
     F4 -->|Yes| G
     
     G --> G1[Phase 3 Enhanced Context Assembly with multi-layer layers]
-    G1 --> G2[Multi-layered Context Building: hierarchical, call flow, inheritance, impact]
+    G1 --> G2[core/context/context_builder.py: Multi-layered Context Building: hierarchical, call flow, inheritance, impact]
     G2 --> G3[Context Ranking by Intent Relevance]
-    G3 --> H[Chat handler uses RetrievalQA with enhanced context]
-    H --> H1[Document re-ranking by intent]
-    H1 --> H2[Impact analysis if applicable]
+    G3 --> H[core/query/chat_handler.py: Chat handler uses RetrievalQA with enhanced context]
+    H --> H1[core/query/prompt_router.py: Document re-ranking by intent]
+    H1 --> H2[core/query/retrieval_logic.py: Impact analysis if applicable]
     H2 --> H3[Answer generation]
-    H3 --> H4[Answer validation & pipeline diagnostics via AnswerValidationHandler]
+    H3 --> H4[core/query/answer_validation_handler.py: Answer validation & pipeline diagnostics via AnswerValidationHandler]
     H4 --> I[Chat UI renders response with metadata, sources, and quality feedback]
 ```
 
@@ -113,7 +113,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[User opens application] --> B[Sidebar Configuration Panel]
+    A[User opens application] --> B[core/ui_components.py: Sidebar Configuration Panel]
     B --> C{Provider Selected?}
     C -->|No| D[Show Provider Selection: Choose Provider...]
     D --> E[User selects Ollama Local or Cloud OpenAI]
@@ -122,7 +122,7 @@ flowchart TD
     F -->|Ollama| G[Configure Ollama Settings]
     F -->|Cloud| H[Configure Cloud Settings]
     
-    G --> G1[Set Ollama Model: llama3.1:latest]
+    G --> G1[core/config/model_config.py: Set Ollama Model: llama3.1:latest]
     G1 --> G2[Set Ollama Endpoint: http://localhost:11434]
     G2 --> G3[Set Embedding Model: nomic-embed-text:latest]
     G3 --> I[Validate Ollama Connection]
@@ -131,11 +131,11 @@ flowchart TD
     H1 --> H2[Validate CLOUD_API_KEY environment variable]
     H2 --> H3[Set Cloud Model: gpt-4.1]
     H3 --> H4[Set Local Ollama for Embeddings]
-    H4 --> J[Validate Cloud API Connection]
+    H4 --> J[core/config/custom_llm_client.py: Validate Cloud API Connection]
     
     I --> K{Connection Valid?}
     J --> K
-    K -->|Yes| L[ModelConfig.set_provider configured]
+    K -->|Yes| L[core/config/model_config.py: ModelConfig.set_provider configured]
     K -->|No| M[Show Connection Error & Retry Options]
     M --> D
     L --> N[Provider Ready for RAG Operations]
@@ -145,7 +145,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[RAG Build Process Started] --> B[ProcessManager.start_rag_build]
+    A[RAG Build Process Started] --> B[core/process_manager.py: ProcessManager.start_rag_build]
     B --> C[Record build start time and process ID]
     C --> D[Disable UI elements that could interfere]
     D --> E[Set building flag in session state]
@@ -157,7 +157,7 @@ flowchart TD
     H -->|No| J{Build completed?}
     J -->|No| K[Continue monitoring and show progress]
     K --> G
-    J -->|Yes| L[ProcessManager.finish_rag_build]
+    J -->|Yes| L[core/process_manager.py: ProcessManager.finish_rag_build]
     
     I --> M[User can force stop or continue waiting]
     M --> N{User choice?}
@@ -175,7 +175,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[User in main application] --> B{Debug Mode Enabled?}
-    B -->|No| C[User clicks title button]
+    B -->|No| C[core/ui_components.py: User clicks title button]
     C --> D[Increment click counter]
     D --> E{Click count >= 5?}
     E -->|No| F[Show current click count]
@@ -183,7 +183,7 @@ flowchart TD
     G --> H[Show success message: Debug mode enabled]
     H --> I[Reset click counter]
     
-    B -->|Yes| J[Show Debug Tools in Sidebar]
+    B -->|Yes| J[core/ui_components.py: Show Debug Tools in Sidebar]
     J --> K[Render Debug Section with Tabs]
     K --> L[Vector DB Inspector Tab]
     K --> M[Chunk Analyzer Tab]
@@ -206,7 +206,7 @@ flowchart TD
     O --> O1[Show database existence and size]
     O1 --> O2[Display tracking files and git status]
     
-    P --> P1[List available log files]
+    P --> P1[core/logger.py: List available log files]
     P1 --> P2[Display selected log content with download]
 ```
 
@@ -214,9 +214,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Documents with Enhanced Metadata] --> B[CrossReferenceBuilder.build_cross_references]
+    A[Documents with Enhanced Metadata] --> B[core/context/cross_reference_builder.py: CrossReferenceBuilder.build_cross_references]
     B --> C[Extract Symbol Definitions]
-    C --> C1[Method signatures with parameters and return types]
+    C --> C1[core/context/metadata_extractor.py: Method signatures with parameters and return types]
     C1 --> C2[Class definitions and interfaces]
     C2 --> C3[Variable and constant definitions]
     
@@ -247,17 +247,17 @@ flowchart TD
     H2 --> H3[inheritance_index.json - Class hierarchies]
     H3 --> H4[symbol_usage_index.json - Usage patterns]
     
-    H4 --> I[Context Builder Loads Cross-Reference Data]
-    I --> J[Multi-Strategy Context Assembly Available]
+    H4 --> I[core/context/context_builder.py: Context Builder Loads Cross-Reference Data]
+    I --> J[core/context/cross_reference_query.py: Multi-Strategy Context Assembly Available]
 ```
 
 ## 🟩 Enhanced Query Processing with Fallback Strategies (Updated)
 
 ```mermaid
 flowchart TD
-    A[User Query Received] --> B[QueryIntentClassifier.classify_intent]
+    A[User Query Received] --> B[core/query/query_intent_classifier.py: QueryIntentClassifier.classify_intent]
     B --> C[Intent Classification with Confidence Score]
-    C --> D[Query Rewriting with Intent Awareness]
+    C --> D[core/query/retrieval_logic.py: Query Rewriting with Intent Awareness]
     D --> E[Multi-Fallback Retrieval Strategy]
     
     E --> F[Strategy 1: Rewritten Query]
@@ -269,12 +269,12 @@ flowchart TD
     I -->|Yes| M
     I -->|No| J[Strategy 3: Key Terms Extraction]
     
-    J --> K[Extract Key Terms from Query]
+    J --> K[core/query/retrieval_logic.py: Extract Key Terms from Query]
     K --> L[Search with Key Terms Only]
     L --> M
     
     M --> N[Phase 3 Enhanced Context Building]
-    N --> N1[Select Context Strategies Based on Intent]
+    N --> N1[core/context/context_builder.py: Select Context Strategies Based on Intent]
     N1 --> N2{Intent Type?}
     
     N2 -->|Overview| O1[Hierarchical Context + Project Structure]
@@ -288,9 +288,9 @@ flowchart TD
     O4 --> P
     
     P --> Q[Format Multi-Layered Context for LLM]
-    Q --> R[Generate Enhanced Query with Context]
-    R --> S[Send to LLM via Provider Factory]
-    S --> T[Document Re-ranking by Intent]
+    Q --> R[core/query/prompt_router.py: Generate Enhanced Query with Context]
+    R --> S[core/config/model_config.py: Send to LLM via Provider Factory]
+    S --> T[core/query/query_intent_classifier.py: Document Re-ranking by Intent]
     T --> U[Return Answer with Metadata and Sources]
 ```
 
@@ -298,7 +298,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Answer Generated by LLM] --> B[AnswerValidationHandler.validate_answer_quality]
+    A[Answer Generated by LLM] --> B[core/query/answer_validation_handler.py: AnswerValidationHandler.validate_answer_quality]
     B --> C[Multi-Metric Quality Assessment]
     
     C --> C1[Calculate Relevancy Score - Query/Answer Alignment]
@@ -313,7 +313,7 @@ flowchart TD
     G -->|Yes| H[Mark as ACCEPTABLE]
     G -->|No| I[Mark as NEEDS IMPROVEMENT]
     
-    F --> J[Log Quality Metrics]
+    F --> J[core/logger.py: Log Quality Metrics]
     H --> J
     I --> J
     
@@ -326,9 +326,9 @@ flowchart TD
     L -->|Yes| M[Generate Quality Alert]
     L -->|No| N[Log Normal Metrics]
     
-    M --> M1[Log to quality_alerts.log]
+    M --> M1[core/logger.py: Log to quality_alerts.log]
     M1 --> O[Generate Fix Recommendations]
-    N --> N1[Log to quality_metrics.log]
+    N --> N1[core/logger.py: Log to quality_metrics.log]
     
     O --> O1[Entity Preservation Fixes if needed]
     O1 --> O2[Retrieval Scope Improvements if needed]
@@ -339,26 +339,65 @@ flowchart TD
     P --> Q[Return Quality Assessment to Chat Handler]
 ```
 
+## 🟨 Feature Toggle Management Flow (Updated)
+
+```mermaid
+flowchart TD
+    A[Application Startup] --> B[core/config/feature_toggle_manager.py: FeatureToggleManager initialization]
+    B --> C[Load core/config/featureToggle.json configuration]
+    C --> D[Parse feature definitions and version requirements]
+    D --> E[Get current application version from pyproject.toml]
+    
+    E --> F[Feature Request: is_enabled check]
+    F --> G{Feature exists in config?}
+    G -->|No| H[Return False - Feature not defined]
+    G -->|Yes| I[Check enabled flag]
+    
+    I --> J{Feature enabled in config?}
+    J -->|No| K[Return False - Feature disabled]
+    J -->|Yes| L[Check version requirement]
+    
+    L --> M{App version >= min version?}
+    M -->|No| N[Return False - Version too low]
+    M -->|Yes| O[Return True - Feature enabled]
+    
+    H --> P[core/logger.py: Log toggle decision with reason]
+    K --> P
+    N --> P
+    O --> P
+    
+    P --> Q[Feature toggle decision complete]
+```
+
 ## **Key Enhancements Reflected in Updated Charts:**
 
-### **🔄 Updated Existing Flows:**
-1. **RAG Build Flow**: Now includes enhanced metadata extraction with design patterns, call sites, and error handling
-2. **Query Processing**: Added contamination-free query rewriting and multi-fallback retrieval strategies  
-3. **Answer Generation**: Integrated answer validation and pipeline diagnostics via `AnswerValidationHandler`
+### **🔄 Updated File Paths:**
+1. **Context Processing**: All context-related files now in `core/context/` folder
+2. **Query Processing**: All query-related files now in `core/query/` folder
+3. **Configuration**: All config files now in `core/config/` folder
+4. **Renamed Files**: `build_rag.py` → `core/index_builder.py`
 
 ### **🆕 New Components Added:**
-1. **Answer Validation Handler**: Complete quality assessment pipeline with multi-metric scoring
-2. **Retrieval Logic Module**: Modular retrieval operations with intelligent fallback mechanisms
-3. **Quality Monitoring**: Real-time quality alerts and pipeline diagnostics
-4. **Enhanced Logging**: New log files for quality metrics, alerts, and pipeline diagnosis
+1. **core/config/custom_llm_client.py**: Cloud provider LLM client with system/user prompt support
+2. **core/context/cross_reference_builder.py**: Cross-reference mapping and call graph generation
+3. **core/context/cross_reference_query.py**: Fast cross-reference querying interface
+4. **core/query/answer_validation_handler.py**: Complete quality assessment pipeline
+5. **core/query/retrieval_logic.py**: Modular retrieval operations with intelligent fallbacks
+6. **core/query/prompt_router.py**: Intent-specific prompt templates
 
-### **🐛 Bug Fixes Represented:**
-1. **Entity Preservation**: Query rewriting now maintains important technical terms
-2. **Retrieval Coverage**: Multi-strategy approach ensures comprehensive document retrieval
-3. **Quality Consistency**: Continuous validation and monitoring prevents poor responses
-4. **Modular Architecture**: Clean separation of concerns for better maintainability
+### **🏗️ Architectural Improvements:**
+1. **Modular Organization**: Clean separation of concerns across specialized folders
+2. **Enhanced Maintainability**: Easier navigation and component isolation
+3. **Clear Dependencies**: Well-defined interfaces between modules
+4. **Scalable Structure**: Easy to add new features and components
 
-These updated Mermaid charts provide a complete and accurate representation of the enhanced RAG Codebase QA Tool, including all recent improvements and architectural changes made on 2025-09-03.
+### **🔧 Enhanced Features:**
+1. **Quality Monitoring**: Real-time validation and pipeline diagnostics
+2. **Multi-Provider Support**: Seamless switching between Ollama and cloud providers
+3. **Advanced Context Assembly**: Multi-layered context building with cross-references
+4. **Feature Toggle System**: Runtime control over advanced capabilities
+
+These updated Mermaid charts now accurately reflect the refactored file structure and enhanced capabilities of the RAG Codebase QA Tool, maintaining all functionality while improving organization and maintainability.
 
 Sources
-[1] MERMAID_CHART.md https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/c04e8dda-2d1d-46a5-857b-421f61c92f78/MERMAID_CHART.md
+[1] MERMAID_CHART.md https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82676895/00d9aa19-2970-4026-9618-689627857795/MERMAID_CHART.md
